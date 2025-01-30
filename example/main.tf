@@ -48,8 +48,8 @@ resource "mongodb_user" "example_role_user" {
   database = "test"
 
   roles  = [ {
-    role = "chsAdmin"
-    db   = "chs" 
+    role = "testRole"
+    db   = "test" 
   } ]
   depends_on = [mongodb_role.example_role]
 }
