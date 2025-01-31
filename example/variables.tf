@@ -1,7 +1,13 @@
-variable "mongo_host" {
+variable "mongo_hosts" {
   description = "MongoDB hostname"
-  type        = string
-  default     = "<host>:27017"
+  type        = list(string)
+  default     = ["localhost:27017"]
+}
+
+variable "tls" {
+  description = "Enable TLS"
+  type        = bool
+  default     = false
 }
 
 variable "mongo_username" {

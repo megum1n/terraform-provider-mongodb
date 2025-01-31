@@ -1,16 +1,14 @@
-
 provider "mongodb" {
-  hosts    = [var.mongo_host]
+  hosts    = var.mongo_hosts
   username = var.mongo_username
   password = var.mongo_password
-  # tls = true # optional
+  tls      = var.tls
 }
 
 terraform {
   required_providers {
     mongodb = {
-      source  = "megum1n/mongodb"
-      version = "0.2.7"
+      source = "megum1n/mongodb"
     }
   }
 }

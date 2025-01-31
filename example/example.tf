@@ -5,7 +5,8 @@ resource "mongodb_role" "example_role" {
     {
       actions = ["find", "insert", "update", "remove"]
       resource = {
-        collection = "" # "" for all collections
+        # "" for all collections
+        collection = ""
         db         = var.database_name
       }
     }
