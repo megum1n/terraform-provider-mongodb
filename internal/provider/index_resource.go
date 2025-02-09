@@ -89,10 +89,6 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 						},
 					},
 				},
-				// Validators: []validator.Set{
-				// 	// Require at least one key field
-				// 	listvalidator.SizeAtLeast(1),
-				//},
 			},
 			"unique": schema.BoolAttribute{
 				Description: "Whether the index should enforce uniqueness",
@@ -181,16 +177,6 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Update plan with the created keys
 	plan.Keys = keySet
-
-	// var planKeys types.Set
-	// diags = req.Plan.GetAttribute(ctx, path.Root("keys"), &planKeys)
-	// resp.Diagnostics.Append(diags...)
-	// if resp.Diagnostics.HasError() {
-	// 	return
-	// }
-	// plan.Keys = planKeys
-
-	//plan.Keys = req.Plan.Get(ctx, path.Root("keys")).(types.Set)
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 }
@@ -236,24 +222,6 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 	state.Keys = *keysSet
-
-	//Keys := state.Keys
-	// state.Keys = req.State.GetAttribute(ctx, path.Root("keys")).(types.Set)
-	// if resp.Diagnostics.HasError() {
-	// 	return
-	// }
-	// // Update state with found index
-	// state.Name = types.StringValue(index.Name)
-	// state.Database = types.StringValue(index.Database)
-	// state.Collection = types.StringValue(index.Collection)
-
-	// // Update keys
-	// keys, diags := index.Keys.ToTerraformSet(ctx)
-	// resp.Diagnostics.Append(diags...)
-	// if resp.Diagnostics.HasError() {
-	// 	return
-	// }
-	// state.Keys = *keys
 
 	// Update properties
 	if index.Unique != nil {
