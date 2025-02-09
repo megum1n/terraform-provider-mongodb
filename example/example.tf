@@ -1,3 +1,4 @@
+# role
 resource "mongodb_role" "example_role" {
   name     = var.role_name
   database = var.database_name
@@ -19,6 +20,7 @@ resource "mongodb_role" "example_role" {
   ]
 }
 
+# user
 resource "mongodb_user" "example_role_user" {
   username = var.user_username
   password = var.user_password
@@ -32,4 +34,16 @@ resource "mongodb_user" "example_role_user" {
   ]
 
   depends_on = [mongodb_role.example_role]
+}
+
+# index
+resource mongodb_index "users_index" {
+  database = var.database_name
+  collection = "collection_name"
+  name = "index_name"
+  keys = [{
+    field = "id"
+    type = "1"
+  }]
+
 }
