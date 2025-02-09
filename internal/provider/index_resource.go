@@ -131,7 +131,6 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Convert keys
 	var keys []mongodb.IndexKey
 	diags = plan.Keys.ElementsAs(ctx, &keys, false)
 	resp.Diagnostics.Append(diags...)
@@ -165,7 +164,6 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Create a new set value for keys
 	keyType := types.ObjectType{
 		AttrTypes: mongodb.IndexKeyAttributeTypes,
 	}
@@ -175,7 +173,6 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Update plan with the created keys
 	plan.Keys = keySet
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -210,12 +207,10 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	// Update state
 	state.Name = types.StringValue(index.Name)
 	state.Database = types.StringValue(index.Database)
 	state.Collection = types.StringValue(index.Collection)
 
-	// Convert and set keys
 	keysSet, diags := index.Keys.ToTerraformSet(ctx)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -223,7 +218,6 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 	state.Keys = *keysSet
 
-	// Update properties
 	if index.Unique != nil {
 		state.Unique = types.BoolValue(*index.Unique)
 	} else {
@@ -250,7 +244,6 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// MongoDB indexes cannot be updated, only dropped and recreated
 	resp.Diagnostics.AddError(
 		"Update not supported",
 		"MongoDB indexes cannot be updated directly. Delete and recreate the index instead.",
