@@ -38,12 +38,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		},
 	}
 
-	// if index.Options.Collation != nil {
-	// 	if collation, ok := index.Options.Collation.(*options.Collation); ok {
-	// 		indexModel.Options.Collation = collation
-	// 	}
-	// }
-
 	if index.Options.Collation != nil {
 		if collationMap, ok := index.Options.Collation.(map[string]interface{}); ok {
 			collation := options.Collation{}
