@@ -24,14 +24,15 @@ Manages MongoDB indexes
 
 ### Optional
 
-- `collation` (String) Collation settings for string comparison as JSON string. Required field: locale. Optional fields: caseLevel, caseFirst, strength, numericOrdering, alternate, maxVariable, backwards.
+- `collation` (Attributes) Collation settings for string comparison (see [below for nested schema](#nestedatt--collation))
 - `expire_after_seconds` (Number) TTL in seconds for TTL indexes
 - `hidden` (Boolean) Whether the index should be hidden from the query planner
-- `partial_filter_expression` (String) Partial filter expression for the index as a JSON string. The index only references documents that match this expression. Supported expressions include: equality expressions (field: value or $eq), $exists: true, $gt, $gte, $lt, $lte, $type, $and, $or, $in
+- `partial_filter_expression` (Map of String) Filter expression that limits indexed documents
 - `sparse` (Boolean) Whether the index should be sparse
 - `sphere_index_version` (Number) The index version number for a 2dsphere index
 - `unique` (Boolean) Whether the index enforces unique values
-- `wildcard_projection` (String) JSON string defining field inclusion/exclusion for wildcard index. Format: {"field1": 1|0, "field2": 1|0}. 1 to include, 0 to exclude.
+- `version` (Number) The index version number (default: 2)
+- `wildcard_projection` (Map of Number) Field inclusion/exclusion for wildcard index (1=include, 0=exclude)
 
 <a id="nestedatt--keys"></a>
 ### Nested Schema for `keys`
@@ -39,4 +40,22 @@ Manages MongoDB indexes
 Required:
 
 - `field` (String) Field name
-- `type` (String) Index type (1, -1, 2dsphere, text)
+- `type` (String) Index type (1, -1, 2dsphere, text, wildcard)
+
+
+<a id="nestedatt--collation"></a>
+### Nested Schema for `collation`
+
+Required:
+
+- `locale` (String) The locale for string comparison
+
+Optional:
+
+- `alternate` (String) Whether spaces and punctuation are considered base characters
+- `backwards` (Boolean) Whether to reverse secondary differences
+- `case_first` (String) Whether uppercase or lowercase should sort first
+- `case_level` (Boolean) Whether to consider case in the 'Level=1' comparison
+- `max_variable` (String) Which characters are affected by 'alternate'
+- `numeric_ordering` (Boolean) Whether to compare numeric strings as numbers
+- `strength` (Number) Comparison level (1-5)

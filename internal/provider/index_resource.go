@@ -2,10 +2,9 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -15,13 +14,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -35,19 +36,31 @@ type IndexResource struct {
 	client *mongodb.Client
 }
 
+type CollationModel struct {
+	Locale          types.String `tfsdk:"locale"`
+	CaseLevel       types.Bool   `tfsdk:"case_level"`
+	CaseFirst       types.String `tfsdk:"case_first"`
+	Strength        types.Int64  `tfsdk:"strength"`
+	NumericOrdering types.Bool   `tfsdk:"numeric_ordering"`
+	Alternate       types.String `tfsdk:"alternate"`
+	MaxVariable     types.String `tfsdk:"max_variable"`
+	Backwards       types.Bool   `tfsdk:"backwards"`
+}
+
 type IndexResourceModel struct {
-	Database                types.String `tfsdk:"database"`
-	Collection              types.String `tfsdk:"collection"`
-	Name                    types.String `tfsdk:"name"`
-	Keys                    types.Set    `tfsdk:"keys"`
-	Unique                  types.Bool   `tfsdk:"unique"`
-	ExpireAfterSeconds      types.Int64  `tfsdk:"expire_after_seconds"`
-	Sparse                  types.Bool   `tfsdk:"sparse"`
-	Hidden                  types.Bool   `tfsdk:"hidden"`
-	PartialFilterExpression types.String `tfsdk:"partial_filter_expression"`
-	SphereIndexVersion      types.Int64  `tfsdk:"sphere_index_version"`
-	WildcardProjection      types.String `tfsdk:"wildcard_projection"`
-	Collation               types.String `tfsdk:"collation"`
+	Database                types.String    `tfsdk:"database"`
+	Collection              types.String    `tfsdk:"collection"`
+	Name                    types.String    `tfsdk:"name"`
+	Keys                    types.Set       `tfsdk:"keys"`
+	Collation               *CollationModel `tfsdk:"collation"`
+	WildcardProjection      types.Map       `tfsdk:"wildcard_projection"`
+	PartialFilterExpression types.Map       `tfsdk:"partial_filter_expression"`
+	Unique                  types.Bool      `tfsdk:"unique"`
+	Sparse                  types.Bool      `tfsdk:"sparse"`
+	Hidden                  types.Bool      `tfsdk:"hidden"`
+	ExpireAfterSeconds      types.Int64     `tfsdk:"expire_after_seconds"`
+	SphereVersion           types.Int64     `tfsdk:"sphere_index_version"`
+	Version                 types.Int64     `tfsdk:"version"`
 }
 
 func NewIndexResource() resource.Resource {
@@ -83,12 +96,69 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"collation": schema.StringAttribute{
-				Description: "Collation settings for string comparison as JSON string. Required field: locale. " +
-					"Optional fields: caseLevel, caseFirst, strength, numericOrdering, alternate, maxVariable, backwards.",
-				Optional: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
+			"collation": schema.SingleNestedAttribute{
+				Description: "Collation settings for string comparison",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.RequiresReplace(),
+				},
+				Attributes: map[string]schema.Attribute{
+					"locale": schema.StringAttribute{
+						Description: "The locale for string comparison",
+						Required:    true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"case_level": schema.BoolAttribute{
+						Description: "Whether to consider case in the 'Level=1' comparison",
+						Optional:    true,
+						PlanModifiers: []planmodifier.Bool{
+							boolplanmodifier.RequiresReplace(),
+						},
+					},
+					"case_first": schema.StringAttribute{
+						Description: "Whether uppercase or lowercase should sort first",
+						Optional:    true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"strength": schema.Int64Attribute{
+						Description: "Comparison level (1-5)",
+						Optional:    true,
+						PlanModifiers: []planmodifier.Int64{
+							int64planmodifier.RequiresReplace(),
+						},
+					},
+					"numeric_ordering": schema.BoolAttribute{
+						Description: "Whether to compare numeric strings as numbers",
+						Optional:    true,
+						PlanModifiers: []planmodifier.Bool{
+							boolplanmodifier.RequiresReplace(),
+						},
+					},
+					"alternate": schema.StringAttribute{
+						Description: "Whether spaces and punctuation are considered base characters",
+						Optional:    true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"max_variable": schema.StringAttribute{
+						Description: "Which characters are affected by 'alternate'",
+						Optional:    true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"backwards": schema.BoolAttribute{
+						Description: "Whether to reverse secondary differences",
+						Optional:    true,
+						PlanModifiers: []planmodifier.Bool{
+							boolplanmodifier.RequiresReplace(),
+						},
+					},
 				},
 			},
 			"keys": schema.SetNestedAttribute{
@@ -107,13 +177,13 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							},
 						},
 						"type": schema.StringAttribute{
-							Description: "Index type (1, -1, 2dsphere, text)",
+							Description: "Index type (1, -1, 2dsphere, text, wildcard)",
 							Required:    true,
 							PlanModifiers: []planmodifier.String{
 								stringplanmodifier.RequiresReplace(),
 							},
 							Validators: []validator.String{
-								stringvalidator.OneOf("1", "-1", "2dsphere", "text"),
+								stringvalidator.OneOf("1", "-1", "2dsphere", "text", "wildcard"),
 							},
 						},
 					},
@@ -126,20 +196,12 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					boolplanmodifier.RequiresReplace(),
 				},
 			},
-			"partial_filter_expression": schema.StringAttribute{
-				Description: "Partial filter expression for the index as a JSON string. " +
-					"The index only references documents that match this expression. " +
-					"Supported expressions include: " +
-					"equality expressions (field: value or $eq), " +
-					"$exists: true, " +
-					"$gt, $gte, $lt, $lte, " +
-					"$type, " +
-					"$and, " +
-					"$or, " +
-					"$in",
-				Optional: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
+			"partial_filter_expression": schema.MapAttribute{
+				Description: "Filter expression that limits indexed documents",
+				Optional:    true,
+				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.Map{
+					mapplanmodifier.RequiresReplace(),
 				},
 			},
 			"expire_after_seconds": schema.Int64Attribute{
@@ -148,6 +210,11 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
 				},
+			},
+			"version": schema.Int64Attribute{
+				Description: "The index version number (default: 2)",
+				Optional:    true,
+				Computed:    true,
 			},
 			"sparse": schema.BoolAttribute{
 				Description: "Whether the index should be sparse",
@@ -163,12 +230,12 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"wildcard_projection": schema.StringAttribute{
-				Description: "JSON string defining field inclusion/exclusion for wildcard index. Format: " +
-					"{\"field1\": 1|0, \"field2\": 1|0}. 1 to include, 0 to exclude.",
-				Optional: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
+			"wildcard_projection": schema.MapAttribute{
+				Description: "Field inclusion/exclusion for wildcard index (1=include, 0=exclude)",
+				Optional:    true,
+				ElementType: types.Int64Type,
+				PlanModifiers: []planmodifier.Map{
+					mapplanmodifier.RequiresReplace(),
 				},
 			},
 			"hidden": schema.BoolAttribute{
@@ -206,19 +273,39 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		return
 	}
 
-	if !config.ExpireAfterSeconds.IsNull() {
-		var keys []mongodb.IndexKey
+	// Get keys for validation
+	var keys []mongodb.IndexKey
+	if !config.Keys.IsNull() {
 		resp.Diagnostics.Append(config.Keys.ElementsAs(ctx, &keys, false)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
+	}
 
-		// Check if any key is a date field
+	// Validate TTL index
+	if !config.ExpireAfterSeconds.IsNull() {
+		isWildcard := false
+		for _, key := range keys {
+			if key.Type == "wildcard" {
+				isWildcard = true
+				break
+			}
+		}
+
+		if isWildcard {
+			resp.Diagnostics.AddError(
+				"Invalid TTL Index Configuration",
+				"TTL index (expire_after_seconds) cannot be used with wildcard indexes")
+			return
+		}
+
+		// Check for date field
 		hasDateField := false
 		for _, key := range keys {
-			if strings.HasSuffix(strings.ToLower(key.Field), "at") ||
-				strings.HasSuffix(strings.ToLower(key.Field), "date") ||
-				strings.HasSuffix(strings.ToLower(key.Field), "time") {
+			fieldName := strings.ToLower(key.Field)
+			if strings.HasSuffix(fieldName, "at") ||
+				strings.HasSuffix(fieldName, "date") ||
+				strings.HasSuffix(fieldName, "time") {
 				hasDateField = true
 				break
 			}
@@ -227,114 +314,134 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		if !hasDateField {
 			resp.Diagnostics.AddError(
 				"Invalid TTL Index Configuration",
-				"TTL index (expire_after_seconds) requires a date field",
-			)
+				"TTL index (expire_after_seconds) requires a date field")
+			return
 		}
 	}
 
+	// Validate WildcardProjection
 	if !config.WildcardProjection.IsNull() {
-		var projection map[string]interface{}
-		if err := json.Unmarshal([]byte(config.WildcardProjection.ValueString()), &projection); err != nil {
+		var projection map[string]int64
+		diags := config.WildcardProjection.ElementsAs(ctx, &projection, false)
+		if diags.HasError() {
+			resp.Diagnostics.Append(diags...)
 			resp.Diagnostics.AddError(
 				"Invalid wildcard projection",
-				fmt.Sprintf("Invalid JSON in wildcard_projection: %v", err),
-			)
+				"Failed to parse wildcard projection data")
 			return
 		}
 
-		// Check for mixing inclusion/exclusion
+		// Validate inclusion/exclusion consistency
 		hasInclusion := false
 		hasExclusion := false
-		for _, v := range projection {
-			if val, ok := v.(float64); ok {
-				if val == 1 {
-					hasInclusion = true
-				} else if val == 0 {
-					hasExclusion = true
-				}
+
+		for k, v := range projection {
+			if v == 1 {
+				hasInclusion = true
+			} else if v == 0 {
+				hasExclusion = true
+			} else {
+				resp.Diagnostics.AddError(
+					"Invalid wildcard projection value",
+					fmt.Sprintf("Values must be 1 or 0, got %d for field %q", v, k))
+				return
 			}
 		}
+
 		if hasInclusion && hasExclusion {
 			resp.Diagnostics.AddError(
 				"Invalid wildcard projection",
-				"Cannot mix inclusions (1) and exclusions (0) in wildcard_projection",
-			)
+				"Cannot mix inclusions (1) and exclusions (0) in wildcard_projection")
 			return
 		}
 	}
 
-	if !config.Collation.IsNull() {
-		var collation map[string]interface{}
-		if err := json.Unmarshal([]byte(config.Collation.ValueString()), &collation); err != nil {
-			resp.Diagnostics.AddError(
-				"Invalid collation",
-				fmt.Sprintf("Invalid JSON in collation: %v", err),
-			)
-			return
-		}
-
-		if _, ok := collation["locale"].(string); !ok {
-			resp.Diagnostics.AddError(
-				"Invalid collation",
-				"Collation must include 'locale' field as string",
-			)
-			return
-		}
-	}
-
+	// Validate PartialFilterExpression
 	if !config.PartialFilterExpression.IsNull() {
-		var filterExpr map[string]interface{}
-		if err := json.Unmarshal([]byte(config.PartialFilterExpression.ValueString()), &filterExpr); err != nil {
+		var filterExpr map[string]string
+		diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
+		if diags.HasError() {
+			resp.Diagnostics.Append(diags...)
 			resp.Diagnostics.AddError(
 				"Error parsing partial filter expression",
-				fmt.Sprintf("Invalid JSON in partial_filter_expression: %v", err),
-			)
+				"Failed to parse filter expression data")
 			return
 		}
 
+		// Validate operators in keys
 		validOperators := map[string]bool{
-			"$eq":     true,
-			"$exists": true,
-			"$gt":     true,
-			"$gte":    true,
-			"$lt":     true,
-			"$lte":    true,
-			"$type":   true,
-			"$and":    true,
-			"$or":     true,
-			"$in":     true,
+			"$eq": true, "$exists": true, "$gt": true, "$gte": true,
+			"$lt": true, "$lte": true, "$type": true, "$and": true,
+			"$or": true, "$in": true,
 		}
 
-		var checkOperators func(v interface{}) bool
-		checkOperators = func(v interface{}) bool {
-			switch val := v.(type) {
-			case map[string]interface{}:
-				for k, v := range val {
-					if strings.HasPrefix(k, "$") {
-						if !validOperators[k] {
-							resp.Diagnostics.AddError(
-								"Invalid partial filter expression",
-								fmt.Sprintf("Operator %s is not supported. Supported operators are: $eq, $exists, $gt, $gte, $lt, $lte, $type, $and, $or, $in", k),
-							)
-							return false
-						}
-					}
-					if !checkOperators(v) {
-						return false
-					}
-				}
-			case []interface{}:
-				for _, item := range val {
-					if !checkOperators(item) {
-						return false
+		for k := range filterExpr {
+			if strings.Contains(k, ".$") {
+				parts := strings.Split(k, ".$")
+				if len(parts) > 1 {
+					op := "$" + parts[1]
+					if !validOperators[op] {
+						resp.Diagnostics.AddError(
+							"Invalid partial filter expression",
+							fmt.Sprintf("Operator %s is not supported. Supported operators: $eq, $exists, $gt, $gte, $lt, $lte, $type, $and, $or, $in", op))
+						return
 					}
 				}
 			}
-			return true
 		}
-
-		checkOperators(filterExpr)
 	}
+}
+
+// Convert CollationModel to MongoDB options.Collation
+func (c *CollationModel) toMongoCollation() *options.Collation {
+	if c == nil {
+		return nil
+	}
+
+	collation := &options.Collation{
+		Locale: c.Locale.ValueString(),
+	}
+
+	if !c.CaseLevel.IsNull() {
+		collation.CaseLevel = c.CaseLevel.ValueBool()
+	}
+	if !c.CaseFirst.IsNull() {
+		collation.CaseFirst = c.CaseFirst.ValueString()
+	}
+	if !c.Strength.IsNull() {
+		collation.Strength = int(c.Strength.ValueInt64())
+	}
+	if !c.NumericOrdering.IsNull() {
+		collation.NumericOrdering = c.NumericOrdering.ValueBool()
+	}
+	if !c.Alternate.IsNull() {
+		collation.Alternate = c.Alternate.ValueString()
+	}
+	if !c.MaxVariable.IsNull() {
+		collation.MaxVariable = c.MaxVariable.ValueString()
+	}
+	if !c.Backwards.IsNull() {
+		collation.Backwards = c.Backwards.ValueBool()
+	}
+
+	return collation
+}
+
+// Convert string map values to appropriate MongoDB types
+func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range strMap {
+		if v == "true" || v == "false" {
+			result[k] = v == "true"
+		} else if num, err := strconv.ParseInt(v, 10, 64); err == nil {
+			result[k] = num
+		} else if fnum, err := strconv.ParseFloat(v, 64); err == nil {
+			result[k] = fnum
+		} else {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -357,30 +464,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	state := IndexResourceModel{
-		Name:                    plan.Name,
-		Database:                plan.Database,
-		Collection:              plan.Collection,
-		Keys:                    plan.Keys,
-		PartialFilterExpression: plan.PartialFilterExpression,
-	}
-
-	if !plan.Unique.IsNull() {
-		state.Unique = plan.Unique
-	}
-	if !plan.ExpireAfterSeconds.IsNull() {
-		state.ExpireAfterSeconds = plan.ExpireAfterSeconds
-	}
-	if !plan.Sparse.IsNull() {
-		state.Sparse = plan.Sparse
-	}
-	if !plan.Hidden.IsNull() {
-		state.Hidden = plan.Hidden
-	}
-	if !plan.Collation.IsNull() {
-		state.Collation = plan.Collation // Preserve the collation state
-	}
-
+	// Create the index model
 	index := &mongodb.Index{
 		Name:       plan.Name.ValueString(),
 		Database:   plan.Database.ValueString(),
@@ -388,39 +472,61 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		Keys:       keys,
 	}
 
+	// Set options based on plan values
 	if !plan.Unique.IsNull() {
-		unique := plan.Unique.ValueBool()
-		index.Options.Unique = &unique
+		index.Options.Unique = plan.Unique.ValueBool()
 	}
-	if !plan.ExpireAfterSeconds.IsNull() {
-		eas := int32(plan.ExpireAfterSeconds.ValueInt64())
-		index.Options.ExpireAfterSeconds = &eas
-	}
+
 	if !plan.Sparse.IsNull() {
-		sparse := plan.Sparse.ValueBool()
-		index.Options.Sparse = &sparse
+		index.Options.Sparse = plan.Sparse.ValueBool()
 	}
+
 	if !plan.Hidden.IsNull() {
-		hidden := plan.Hidden.ValueBool()
-		index.Options.Hidden = &hidden
+		index.Options.Hidden = plan.Hidden.ValueBool()
 	}
-	if !plan.SphereIndexVersion.IsNull() {
-		version := int32(plan.SphereIndexVersion.ValueInt64())
-		index.Options.SphereIndexVersion = &version
+
+	if !plan.ExpireAfterSeconds.IsNull() {
+		index.Options.ExpireAfterSeconds = int32(plan.ExpireAfterSeconds.ValueInt64())
 	}
-	if !plan.Collation.IsNull() {
-		var collation map[string]interface{}
-		json.Unmarshal([]byte(plan.Collation.ValueString()), &collation)
-		index.Options.Collation = collation
+
+	if !plan.SphereVersion.IsNull() {
+		index.Options.SphereVersion = int32(plan.SphereVersion.ValueInt64())
 	}
+
+	// Process collation
+	if plan.Collation != nil {
+		index.Options.Collation = plan.Collation.toMongoCollation()
+	}
+
+	// Process wildcard projection
 	if !plan.WildcardProjection.IsNull() {
-		var projection map[string]interface{}
-		json.Unmarshal([]byte(plan.WildcardProjection.ValueString()), &projection)
-		index.Options.WildcardProjection = projection
+		var projectionInt64 map[string]int64
+		diags = plan.WildcardProjection.ElementsAs(ctx, &projectionInt64, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 
-		state.WildcardProjection = plan.WildcardProjection
+		// Convert int64 to int32
+		projection := make(map[string]int32)
+		for k, v := range projectionInt64 {
+			projection[k] = int32(v)
+		}
+		index.Options.WildcardProjection = projection
 	}
 
+	// Process partial filter expression
+	if !plan.PartialFilterExpression.IsNull() {
+		var filterExpr map[string]string
+		diags = plan.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		index.Options.PartialFilterExpression = stringMapToMongoTypes(filterExpr)
+	}
+
+	// Create index
 	_, err := r.client.CreateIndex(ctx, index)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -430,7 +536,10 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	plan.Version = types.Int64Value(int64(mongodb.DefaultIndexVersion))
+
+	// Copy plan to state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -454,6 +563,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 			resp.State.RemoveResource(ctx)
 			return
 		}
+
 		resp.Diagnostics.AddError(
 			"Error reading MongoDB index",
 			err.Error(),
@@ -461,20 +571,8 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	if index.Keys == nil {
-		return
-	}
-
-	var currentKeys []mongodb.IndexKey
-	diags := state.Keys.ElementsAs(ctx, &currentKeys, false)
-	resp.Diagnostics.Append(diags...)
-
-	tflog.Debug(ctx, "Current vs MongoDB Keys", map[string]interface{}{
-		"current_keys": currentKeys,
-		"mongo_keys":   index.Keys,
-	})
-
-	if !reflect.DeepEqual(currentKeys, index.Keys) {
+	// Update keys
+	if index.Keys != nil {
 		keysSet, diags := index.Keys.ToTerraformSet(ctx)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
@@ -483,62 +581,63 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.Keys = *keysSet
 	}
 
-	if index.Options.Unique != nil && (state.Unique.IsNull() || state.Unique.ValueBool() != *index.Options.Unique) {
-		state.Unique = types.BoolValue(*index.Options.Unique)
-	}
-
+	// Handle PartialFilterExpression
 	if index.Options.PartialFilterExpression != nil {
-		if exprBytes, err := json.Marshal(index.Options.PartialFilterExpression); err == nil {
-			state.PartialFilterExpression = types.StringValue(string(exprBytes))
-		} else {
-			state.PartialFilterExpression = types.StringNull()
+		// Convert each value to string for Terraform
+		strMap := make(map[string]string)
+		for k, v := range index.Options.PartialFilterExpression {
+			strMap[k] = fmt.Sprintf("%v", v)
+		}
+
+		pfMap, diags := types.MapValueFrom(ctx, types.StringType, strMap)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.PartialFilterExpression = pfMap
 		}
 	} else {
-		state.PartialFilterExpression = types.StringNull()
+		state.PartialFilterExpression = types.MapNull(types.StringType)
 	}
 
+	// Handle Collation
 	if index.Options.Collation != nil {
-		if collationBytes, err := json.Marshal(index.Options.Collation); err == nil {
-			state.Collation = types.StringValue(string(collationBytes))
-		} else {
-			state.Collation = types.StringNull()
+		if state.Collation == nil {
+			state.Collation = &CollationModel{}
 		}
+
+		state.Collation.Locale = types.StringValue(index.Options.Collation.Locale)
+		state.Collation.CaseLevel = types.BoolValue(index.Options.Collation.CaseLevel)
+		state.Collation.CaseFirst = types.StringValue(index.Options.Collation.CaseFirst)
+		state.Collation.Strength = types.Int64Value(int64(index.Options.Collation.Strength))
+		state.Collation.NumericOrdering = types.BoolValue(index.Options.Collation.NumericOrdering)
+		state.Collation.Alternate = types.StringValue(index.Options.Collation.Alternate)
+		state.Collation.MaxVariable = types.StringValue(index.Options.Collation.MaxVariable)
+		state.Collation.Backwards = types.BoolValue(index.Options.Collation.Backwards)
 	} else {
-		state.Collation = types.StringNull()
+		state.Collation = nil
 	}
 
-	if index.Options.ExpireAfterSeconds != nil && (state.ExpireAfterSeconds.IsNull() || state.ExpireAfterSeconds.ValueInt64() != int64(*index.Options.ExpireAfterSeconds)) {
-		state.ExpireAfterSeconds = types.Int64Value(int64(*index.Options.ExpireAfterSeconds))
-	}
-
-	if index.Options.Sparse != nil && (state.Sparse.IsNull() || state.Sparse.ValueBool() != *index.Options.Sparse) {
-		state.Sparse = types.BoolValue(*index.Options.Sparse)
-	}
-
-	if index.Options.SphereIndexVersion != nil {
-		state.SphereIndexVersion = types.Int64Value(int64(*index.Options.SphereIndexVersion))
-	} else {
-		state.SphereIndexVersion = types.Int64Null()
-	}
-
+	// Handle WildcardProjection
 	if index.Options.WildcardProjection != nil {
-		if projBytes, err := json.Marshal(index.Options.WildcardProjection); err == nil {
-			state.WildcardProjection = types.StringValue(string(projBytes))
-		} else {
-			state.WildcardProjection = types.StringNull()
+		// Convert int32 to int64
+		int64Map := make(map[string]int64)
+		for k, v := range index.Options.WildcardProjection {
+			int64Map[k] = int64(v)
+		}
+
+		wpMap, diags := types.MapValueFrom(ctx, types.Int64Type, int64Map)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.WildcardProjection = wpMap
 		}
 	} else {
-		state.WildcardProjection = types.StringNull()
-	}
-
-	if index.Options.Hidden != nil && (state.Hidden.IsNull() || state.Hidden.ValueBool() != *index.Options.Hidden) {
-		state.Hidden = types.BoolValue(*index.Options.Hidden)
+		state.WildcardProjection = types.MapNull(types.Int64Type)
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	// Let RequiresReplace handle changes
 	resp.Diagnostics.Append(resp.State.Set(ctx, req.Plan)...)
 }
 
