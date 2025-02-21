@@ -672,16 +672,10 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// if !plan.Version.IsNull() {
-	// 	// User specified a version, no need to set default
-	// } else {
-	// 	plan.Version = types.Int64Value(2)
-	// }
-	//plan.Version = types.Int64Value(2)
-
+	
 	plan.Version = types.Int64Value(int64(mongodb.DefaultIndexVersion))
 
-	// Copy plan to state
+	
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -724,14 +718,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.Keys = *keysSet
 	}
 
-	// Update options
-	// state.Unique = types.BoolValue(index.Options.Unique)
-	// state.Sparse = types.BoolValue(index.Options.Sparse)
-	// state.Hidden = types.BoolValue(index.Options.Hidden)
-	// state.ExpireAfterSeconds = types.Int64Value(int64(index.Options.ExpireAfterSeconds))
-	// state.SphereVersion = types.Int64Value(int64(index.Options.SphereVersion))
-	// state.Version = types.Int64Value(int64(index.Options.Version))
-
+	
 	// Handle PartialFilterExpression
 	if index.Options.PartialFilterExpression != nil {
 		// Convert each value to string for Terraform
@@ -767,9 +754,9 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.Collation = nil
 	}
 
-	// Handle WildcardProjection
+	
 	if index.Options.WildcardProjection != nil {
-		// Convert int32 to int64
+		
 		int64Map := make(map[string]int64)
 		for k, v := range index.Options.WildcardProjection {
 			int64Map[k] = int64(v)
