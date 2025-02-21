@@ -24,14 +24,21 @@ Manages MongoDB indexes
 
 ### Optional
 
+- `bits` (Number) Number of bits for geospatial index precision
 - `collation` (Attributes) Collation settings for string comparison (see [below for nested schema](#nestedatt--collation))
+- `default_language` (String) Default language for text index
 - `expire_after_seconds` (Number) TTL in seconds for TTL indexes
 - `hidden` (Boolean) Whether the index should be hidden from the query planner
+- `language_override` (String) Field name that contains document language
+- `max` (Number) Maximum value for 2d index
+- `min` (Number) Minimum value for 2d index
 - `partial_filter_expression` (Map of String) Filter expression that limits indexed documents
 - `sparse` (Boolean) Whether the index should be sparse
 - `sphere_index_version` (Number) The index version number for a 2dsphere index
+- `text_index_version` (Number) Text index version number
 - `unique` (Boolean) Whether the index enforces unique values
 - `version` (Number) The index version number (default: 2)
+- `weights` (Map of Number) Field weights for text index
 - `wildcard_projection` (Map of Number) Field inclusion/exclusion for wildcard index (1=include, 0=exclude)
 
 <a id="nestedatt--keys"></a>
@@ -40,7 +47,7 @@ Manages MongoDB indexes
 Required:
 
 - `field` (String) Field name
-- `type` (String) Index type (1, -1, 2dsphere, text, wildcard)
+- `type` (String) Index type (1, -1, 2dsphere, text, 2d, wildcard)
 
 
 <a id="nestedatt--collation"></a>
