@@ -16,7 +16,6 @@ type GetIndexOptions struct {
 }
 
 func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) {
-
 	tflog.Debug(ctx, "CreateIndex", map[string]interface{}{
 		"database":   index.Database,
 		"collection": index.Collection,
@@ -37,6 +36,15 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	for _, key := range index.Keys {
 		if key.Type == "2d" {
 			is2dIndex = true
+			break
+		}
+	}
+
+	// Check if it's a text index
+	isTextIndex := false
+	for _, key := range index.Keys {
+		if key.Type == "text" {
+			isTextIndex = true
 			break
 		}
 	}
@@ -73,8 +81,8 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		}
 	}
 
-	// In CreateIndex function, after other options:
-	if isTextIndex := false; isTextIndex {
+	// Set text index options
+	if isTextIndex {
 		if index.Options.Weights != nil {
 			opts.SetWeights(index.Options.Weights)
 		}
@@ -98,12 +106,12 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		opts.SetCollation(index.Options.Collation)
 	}
 
-	if index.Options.PartialFilterExpression != nil && len(index.Options.PartialFilterExpression) > 0 {
+	if len(index.Options.PartialFilterExpression) > 0 {
 		opts.PartialFilterExpression = index.Options.PartialFilterExpression
 	}
 
 	// Only set for wildcard indexes and if not empty
-	if isWildcardIndex && index.Options.WildcardProjection != nil && len(index.Options.WildcardProjection) > 0 {
+	if isWildcardIndex && len(index.Options.WildcardProjection) > 0 {
 		opts.WildcardProjection = index.Options.WildcardProjection
 	}
 
