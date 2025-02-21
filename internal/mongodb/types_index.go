@@ -16,7 +16,6 @@ type IndexKey struct {
 	Type  string `bson:"type"  tfsdk:"type"`
 }
 
-// Always use version 2 for better compatibility
 const DefaultIndexVersion int32 = 2
 
 type IndexKeys []IndexKey
@@ -31,6 +30,13 @@ type IndexOptions struct {
 	ExpireAfterSeconds      int32                  `bson:"expireAfterSeconds,omitempty"`
 	Version                 int32                  `bson:"v,omitempty"`
 	SphereVersion           int32                  `bson:"2dSphereVersion,omitempty"`
+	Bits                    int32                  `bson:"bits,omitempty"`
+	Min                     float64                `bson:"min,omitempty"`
+	Max                     float64                `bson:"max,omitempty"`
+	Weights                 map[string]int32       `bson:"weights,omitempty"`
+	DefaultLanguage         string                 `bson:"default_language,omitempty"`
+	LanguageOverride        string                 `bson:"language_override,omitempty"`
+	TextIndexVersion        int32                  `bson:"textIndexVersion,omitempty"`
 }
 
 type Index struct {
@@ -71,6 +77,8 @@ func (k *IndexKeys) toBson() bson.D {
 			value = 1
 		case "-1", "desc":
 			value = -1
+		case "2d":
+			value = "2d"
 		case "2dsphere":
 			value = "2dsphere"
 		case "wildcard":

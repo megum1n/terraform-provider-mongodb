@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
@@ -61,6 +62,13 @@ type IndexResourceModel struct {
 	ExpireAfterSeconds      types.Int64     `tfsdk:"expire_after_seconds"`
 	SphereVersion           types.Int64     `tfsdk:"sphere_index_version"`
 	Version                 types.Int64     `tfsdk:"version"`
+	Bits                    types.Int64     `tfsdk:"bits"`
+	Min                     types.Float64   `tfsdk:"min"`
+	Max                     types.Float64   `tfsdk:"max"`
+	Weights                 types.Map       `tfsdk:"weights"`
+	DefaultLanguage         types.String    `tfsdk:"default_language"`
+	LanguageOverride        types.String    `tfsdk:"language_override"`
+	TextIndexVersion        types.Int64     `tfsdk:"text_index_version"`
 }
 
 func NewIndexResource() resource.Resource {
@@ -177,13 +185,13 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							},
 						},
 						"type": schema.StringAttribute{
-							Description: "Index type (1, -1, 2dsphere, text, wildcard)",
+							Description: "Index type (1, -1, 2dsphere, text, 2d, wildcard)",
 							Required:    true,
 							PlanModifiers: []planmodifier.String{
 								stringplanmodifier.RequiresReplace(),
 							},
 							Validators: []validator.String{
-								stringvalidator.OneOf("1", "-1", "2dsphere", "text", "wildcard"),
+								stringvalidator.OneOf("1", "-1", "2dsphere", "text", "2d", "wildcard", "hashed"),
 							},
 						},
 					},
@@ -243,6 +251,56 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Optional:    true,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.RequiresReplace(),
+				},
+			},
+			"bits": schema.Int64Attribute{
+				Description: "Number of bits for geospatial index precision",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"min": schema.Float64Attribute{
+				Description: "Minimum value for 2d index",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.RequiresReplace(),
+				},
+			},
+			"max": schema.Float64Attribute{
+				Description: "Maximum value for 2d index",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.RequiresReplace(),
+				},
+			},
+			"weights": schema.MapAttribute{
+				Description: "Field weights for text index",
+				Optional:    true,
+				ElementType: types.Int64Type,
+				PlanModifiers: []planmodifier.Map{
+					mapplanmodifier.RequiresReplace(),
+				},
+			},
+			"default_language": schema.StringAttribute{
+				Description: "Default language for text index",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"language_override": schema.StringAttribute{
+				Description: "Field name that contains document language",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"text_index_version": schema.Int64Attribute{
+				Description: "Text index version number",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
 		},
@@ -353,6 +411,47 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 				"Invalid wildcard projection",
 				"Cannot mix inclusions (1) and exclusions (0) in wildcard_projection")
 			return
+		}
+	}
+
+	// Validate text index options
+	isTextIndex := false
+	for _, key := range keys {
+		if key.Type == "text" {
+			isTextIndex = true
+			break
+		}
+	}
+
+	if isTextIndex {
+		// Validate weights map values are positive
+		if !config.Weights.IsNull() {
+			var weights map[string]int64
+			diags := config.Weights.ElementsAs(ctx, &weights, false)
+			if diags.HasError() {
+				resp.Diagnostics.Append(diags...)
+				return
+			}
+
+			for field, weight := range weights {
+				if weight <= 0 {
+					resp.Diagnostics.AddError(
+						"Invalid weight value",
+						fmt.Sprintf("Weight for field %q must be positive, got: %d", field, weight))
+					return
+				}
+			}
+		}
+
+		// Validate text index version if specified
+		if !config.TextIndexVersion.IsNull() {
+			version := config.TextIndexVersion.ValueInt64()
+			if version < 1 || version > 3 {
+				resp.Diagnostics.AddError(
+					"Invalid text index version",
+					"Text index version must be between 1 and 3")
+				return
+			}
 		}
 	}
 
@@ -493,6 +592,43 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.SphereVersion = int32(plan.SphereVersion.ValueInt64())
 	}
 
+	if !plan.Bits.IsNull() {
+		index.Options.Bits = int32(plan.Bits.ValueInt64())
+	}
+	if !plan.Min.IsNull() {
+		index.Options.Min = plan.Min.ValueFloat64()
+	}
+	if !plan.Max.IsNull() {
+		index.Options.Max = plan.Max.ValueFloat64()
+	}
+
+	// weight DefaultLanguage & LanguageOverride
+	if !plan.Weights.IsNull() {
+		var weightsInt64 map[string]int64
+		diags = plan.Weights.ElementsAs(ctx, &weightsInt64, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		weights := make(map[string]int32)
+		for k, v := range weightsInt64 {
+			weights[k] = int32(v)
+		}
+		index.Options.Weights = weights
+	}
+
+	if !plan.DefaultLanguage.IsNull() {
+		index.Options.DefaultLanguage = plan.DefaultLanguage.ValueString()
+	}
+
+	if !plan.LanguageOverride.IsNull() {
+		index.Options.LanguageOverride = plan.LanguageOverride.ValueString()
+	}
+
+	if !plan.TextIndexVersion.IsNull() {
+		index.Options.TextIndexVersion = int32(plan.TextIndexVersion.ValueInt64())
+	}
+
 	// Process collation
 	if plan.Collation != nil {
 		index.Options.Collation = plan.Collation.toMongoCollation()
@@ -535,6 +671,13 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		)
 		return
 	}
+
+	// if !plan.Version.IsNull() {
+	// 	// User specified a version, no need to set default
+	// } else {
+	// 	plan.Version = types.Int64Value(2)
+	// }
+	//plan.Version = types.Int64Value(2)
 
 	plan.Version = types.Int64Value(int64(mongodb.DefaultIndexVersion))
 
@@ -580,6 +723,14 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		}
 		state.Keys = *keysSet
 	}
+
+	// Update options
+	// state.Unique = types.BoolValue(index.Options.Unique)
+	// state.Sparse = types.BoolValue(index.Options.Sparse)
+	// state.Hidden = types.BoolValue(index.Options.Hidden)
+	// state.ExpireAfterSeconds = types.Int64Value(int64(index.Options.ExpireAfterSeconds))
+	// state.SphereVersion = types.Int64Value(int64(index.Options.SphereVersion))
+	// state.Version = types.Int64Value(int64(index.Options.Version))
 
 	// Handle PartialFilterExpression
 	if index.Options.PartialFilterExpression != nil {
@@ -631,6 +782,55 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		}
 	} else {
 		state.WildcardProjection = types.MapNull(types.Int64Type)
+	}
+
+	// Update 2d index options
+	if index.Options.Bits > 0 {
+		state.Bits = types.Int64Value(int64(index.Options.Bits))
+	} else {
+		state.Bits = types.Int64Null()
+	}
+
+	if index.Options.Min != 0 {
+		state.Min = types.Float64Value(index.Options.Min)
+	} else {
+		state.Min = types.Float64Null()
+	}
+
+	if index.Options.Max != 0 {
+		state.Max = types.Float64Value(index.Options.Max)
+	} else {
+		state.Max = types.Float64Null()
+	}
+
+	if index.Options.Weights != nil {
+		weights := make(map[string]int64)
+		for k, v := range index.Options.Weights {
+			weights[k] = int64(v)
+		}
+		weightMap, diags := types.MapValueFrom(ctx, types.Int64Type, weights)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.Weights = weightMap
+		}
+	}
+
+	if index.Options.DefaultLanguage != "" {
+		state.DefaultLanguage = types.StringValue(index.Options.DefaultLanguage)
+	} else {
+		state.DefaultLanguage = types.StringNull()
+	}
+
+	if index.Options.LanguageOverride != "" {
+		state.LanguageOverride = types.StringValue(index.Options.LanguageOverride)
+	} else {
+		state.LanguageOverride = types.StringNull()
+	}
+
+	if index.Options.TextIndexVersion > 0 {
+		state.TextIndexVersion = types.Int64Value(int64(index.Options.TextIndexVersion))
+	} else {
+		state.TextIndexVersion = types.Int64Null()
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

@@ -1,5 +1,3 @@
-// For mongoDB
-
 package mongodb
 
 import (
@@ -18,6 +16,7 @@ type GetIndexOptions struct {
 }
 
 func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) {
+
 	tflog.Debug(ctx, "CreateIndex", map[string]interface{}{
 		"database":   index.Database,
 		"collection": index.Collection,
@@ -29,6 +28,15 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	for _, key := range index.Keys {
 		if key.Type == "wildcard" {
 			isWildcardIndex = true
+			break
+		}
+	}
+
+	// Check if it's a 2d index
+	is2dIndex := false
+	for _, key := range index.Keys {
+		if key.Type == "2d" {
+			is2dIndex = true
 			break
 		}
 	}
@@ -50,6 +58,35 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 
 	if index.Options.Hidden {
 		opts.SetHidden(index.Options.Hidden)
+	}
+
+	// Set 2d-specific options
+	if is2dIndex {
+		if index.Options.Bits > 0 {
+			opts.SetBits(index.Options.Bits)
+		}
+		if index.Options.Min != 0 {
+			opts.SetMin(index.Options.Min)
+		}
+		if index.Options.Max != 0 {
+			opts.SetMax(index.Options.Max)
+		}
+	}
+
+	// In CreateIndex function, after other options:
+	if isTextIndex := false; isTextIndex {
+		if index.Options.Weights != nil {
+			opts.SetWeights(index.Options.Weights)
+		}
+		if index.Options.DefaultLanguage != "" {
+			opts.SetDefaultLanguage(index.Options.DefaultLanguage)
+		}
+		if index.Options.LanguageOverride != "" {
+			opts.SetLanguageOverride(index.Options.LanguageOverride)
+		}
+		if index.Options.TextIndexVersion > 0 {
+			opts.SetTextVersion(index.Options.TextIndexVersion)
+		}
 	}
 
 	// Only set TTL for non-wildcard indexes
