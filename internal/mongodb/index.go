@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -16,6 +17,7 @@ type GetIndexOptions struct {
 }
 
 func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) {
+
 	tflog.Debug(ctx, "CreateIndex", map[string]interface{}{
 		"database":   index.Database,
 		"collection": index.Collection,
@@ -81,7 +83,7 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		}
 	}
 
-	// Set text index options
+	// In CreateIndex function, after other options:
 	if isTextIndex {
 		if index.Options.Weights != nil {
 			opts.SetWeights(index.Options.Weights)
@@ -136,7 +138,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 }
 
 func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
-
 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
 	cursor, err := collection.Indexes().List(ctx)
 	if err != nil {
@@ -144,24 +145,143 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 	}
 	defer cursor.Close(ctx)
 
-	var indexes []*Index
-	if err = cursor.All(ctx, &indexes); err != nil {
+	var rawIndexes []bson.M
+	if err = cursor.All(ctx, &rawIndexes); err != nil {
 		return nil, err
 	}
 
 	tflog.Debug(ctx, "Index data from MongoDB", map[string]interface{}{
-		"indexes": indexes,
+		"indexes": rawIndexes,
 	})
 
-	for _, idx := range indexes {
-		if idx.Name == options.Name {
+	for _, rawIndex := range rawIndexes {
+		if rawIndex["name"] == options.Name {
 			tflog.Debug(ctx, "Found matching index", map[string]interface{}{
-				"index": idx,
+				"index": rawIndex,
 			})
-			idx.Database = options.Database
-			idx.Collection = options.Collection
 
-			return idx, nil
+			var index Index
+			index.Name = options.Name
+			index.Database = options.Database
+			index.Collection = options.Collection
+
+			// Decode keys
+			if keyValue, ok := rawIndex["key"].(bson.M); ok {
+				index.Keys = make(IndexKeys, 0)
+
+				// Check if this is a text index
+				isTextIndex := false
+				if value, hasFts := keyValue["_fts"]; hasFts {
+					if valueStr, ok := value.(string); ok && valueStr == "text" {
+						isTextIndex = true
+					}
+				}
+
+				if isTextIndex {
+					// Handle text index keys
+					//if weights, hasWeights := rawIndex["weights"].(bson.M); hasWeights {
+					if weights, hasWeights := rawIndex["weights"].(bson.M); hasWeights && len(weights) > 0 {
+						for field := range weights {
+							index.Keys = append(index.Keys, IndexKey{
+								Field: field,
+								Type:  "text",
+							})
+						}
+					} else {
+						// Fallback if weights not found
+						index.Keys = append(index.Keys, IndexKey{
+							Field: "_fts",
+							Type:  "text",
+						})
+					}
+				} else {
+					// Handle standard indexes
+					for field, value := range keyValue {
+						fieldType := fmt.Sprintf("%v", value)
+
+						// Special case for wildcard indexes
+						if field == "$**" && value == int32(1) {
+							fieldType = "wildcard"
+						} else {
+							// Standard index type mapping
+							switch value {
+							case int32(1):
+								fieldType = "1"
+							case int32(-1):
+								fieldType = "-1"
+							}
+						}
+
+						index.Keys = append(index.Keys, IndexKey{
+							Field: field,
+							Type:  fieldType,
+						})
+					}
+				}
+			}
+
+			// Process text index specific options
+			if textVersion, exists := rawIndex["textIndexVersion"].(int32); exists {
+				index.Options.TextIndexVersion = textVersion
+			}
+
+			if defaultLang, exists := rawIndex["default_language"].(string); exists {
+				index.Options.DefaultLanguage = defaultLang
+			}
+
+			if langOverride, exists := rawIndex["language_override"].(string); exists {
+				index.Options.LanguageOverride = langOverride
+			}
+
+			// Process weights for text indexes
+			if weights, exists := rawIndex["weights"].(bson.M); exists && len(weights) > 0 {
+				index.Options.Weights = make(map[string]int32)
+				for field, value := range weights {
+					if weight, ok := value.(int32); ok {
+						index.Options.Weights[field] = weight
+					}
+				}
+			}
+
+			// Process wildcard projection
+			if proj, exists := rawIndex["wildcardProjection"].(bson.M); exists && proj != nil {
+				index.Options.WildcardProjection = make(map[string]int32)
+				for key, value := range proj {
+					if v, ok := value.(int32); ok {
+						index.Options.WildcardProjection[key] = v
+					} else if v, ok := value.(int); ok {
+						index.Options.WildcardProjection[key] = int32(v)
+					}
+				}
+			}
+
+			// Process partial filter expression
+			if pfe, exists := rawIndex["partialFilterExpression"].(bson.M); exists && pfe != nil {
+				index.Options.PartialFilterExpression = make(map[string]interface{})
+				for key, value := range pfe {
+					switch v := value.(type) {
+					case int32:
+						index.Options.PartialFilterExpression[key] = fmt.Sprintf("%d", v)
+					default:
+						index.Options.PartialFilterExpression[key] = fmt.Sprintf("%v", v)
+					}
+				}
+			}
+
+			// Process common index options
+			if v, ok := rawIndex["unique"].(bool); ok {
+				index.Options.Unique = v
+			}
+
+			if v, ok := rawIndex["sparse"].(bool); ok {
+				index.Options.Sparse = v
+			}
+
+			if v, ok := rawIndex["v"].(int32); ok {
+				index.Options.Version = v
+			}
+
+			return &index, nil
 		}
 	}
 
