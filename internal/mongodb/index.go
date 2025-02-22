@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type GetIndexOptions struct {
@@ -137,7 +138,39 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	})
 }
 
+// func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
+// 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
+// 	cursor, err := collection.Indexes().List(ctx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer cursor.Close(ctx)
+
+// 	var indexes []Index
+// 	if err = cursor.All(ctx, &indexes); err != nil {
+// 		return nil, err
+// 	}
+
+// 	tflog.Debug(ctx, "Index data from MongoDB", map[string]interface{}{
+// 		"indexes": indexes,
+// 	})
+
+// 	for _, index := range indexes {
+// 		if index.Name == options.Name {
+// 			index.Database = options.Database
+// 			index.Collection = options.Collection
+// 			return &index, nil
+// 		}
+// 	}
+
+// 	return nil, NotFoundError{
+// 		name: options.Name,
+// 		t:    "index",
+// 	}
+// }
+
 func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
+
 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
 	cursor, err := collection.Indexes().List(ctx)
 	if err != nil {
@@ -243,6 +276,17 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 				}
 			}
 
+			// In GetIndex function, add handling for 2d index options:
+			if bits, exists := rawIndex["bits"].(int32); exists {
+				index.Options.Bits = bits
+			}
+			if min, exists := rawIndex["min"].(float64); exists {
+				index.Options.Min = min
+			}
+			if max, exists := rawIndex["max"].(float64); exists {
+				index.Options.Max = max
+			}
+
 			// Process wildcard projection
 			if proj, exists := rawIndex["wildcardProjection"].(bson.M); exists && proj != nil {
 				index.Options.WildcardProjection = make(map[string]int32)
@@ -253,6 +297,21 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 						index.Options.WildcardProjection[key] = int32(v)
 					}
 				}
+			}
+
+			if collation, exists := rawIndex["collation"].(bson.M); exists && collation != nil {
+				// Map specific fields we care about
+				userCollation := mongooptions.Collation{
+					Locale:          collation["locale"].(string),
+					Strength:        int(collation["strength"].(int32)),
+					CaseLevel:       collation["caseLevel"].(bool),
+					Alternate:       collation["alternate"].(string),
+					Backwards:       collation["backwards"].(bool),
+					CaseFirst:       collation["caseFirst"].(string),
+					MaxVariable:     collation["maxVariable"].(string),
+					NumericOrdering: collation["numericOrdering"].(bool),
+				}
+				index.Options.Collation = &userCollation
 			}
 
 			// Process partial filter expression
