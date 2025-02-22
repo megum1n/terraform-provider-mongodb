@@ -138,37 +138,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	})
 }
 
-// func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
-// 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
-// 	cursor, err := collection.Indexes().List(ctx)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer cursor.Close(ctx)
-
-// 	var indexes []Index
-// 	if err = cursor.All(ctx, &indexes); err != nil {
-// 		return nil, err
-// 	}
-
-// 	tflog.Debug(ctx, "Index data from MongoDB", map[string]interface{}{
-// 		"indexes": indexes,
-// 	})
-
-// 	for _, index := range indexes {
-// 		if index.Name == options.Name {
-// 			index.Database = options.Database
-// 			index.Collection = options.Collection
-// 			return &index, nil
-// 		}
-// 	}
-
-// 	return nil, NotFoundError{
-// 		name: options.Name,
-// 		t:    "index",
-// 	}
-// }
-
 func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
 
 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
