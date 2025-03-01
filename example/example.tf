@@ -44,9 +44,9 @@ resource "mongodb_index" "example_index" {
   collection = var.collection_name
   name       = var.index_name
   keys       = var.index_keys
-
+  
   # Optional parameters
-  unique                    = var.index_unique
+  unique                   = var.index_unique
   expire_after_seconds     = var.expire_after_seconds
   partial_filter_expression = var.partial_filter_expression
   wildcard_projection      = var.wildcard_projection

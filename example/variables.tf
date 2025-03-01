@@ -41,6 +41,7 @@ variable "user_password" {
 }
 
 ### variables for index
+
 variable "collection_name" {
   description = "Collection name"
   type        = string
@@ -52,11 +53,8 @@ variable "index_name" {
 }
 
 variable "index_keys" {
-  description = "Index keys configuration"
-  type = list(object({
-    field = string
-    type  = string
-  }))
+  description = "Index keys configuration as key-value map (field = index_type)"
+  type        = map(string)
 }
 
 variable "index_unique" {
@@ -73,7 +71,7 @@ variable "expire_after_seconds" {
 
 variable "partial_filter_expression" {
   description = "Partial filter expression"
-  type        = map(any)
+  type        = map(string)
   default     = null
 }
 
@@ -86,9 +84,14 @@ variable "wildcard_projection" {
 variable "collation" {
   description = "Collation configuration"
   type = object({
-    locale      = string
-    strength    = number
-    case_level  = bool
+    locale           = string
+    strength         = optional(number)
+    case_level       = optional(bool)
+    case_first       = optional(string)
+    numeric_ordering = optional(bool)
+    alternate        = optional(string)
+    max_variable     = optional(string)
+    backwards        = optional(bool)
   })
   default = null
 }
