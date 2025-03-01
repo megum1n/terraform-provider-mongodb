@@ -42,10 +42,10 @@ type IndexOptions struct {
 
 type Index struct {
 	Name       string       `bson:"name"`
-	Database   string       `bson:"database"`
-	Collection string       `bson:"collection"`
-	Keys       IndexKeys    `bson:"keys"`
-	Options    IndexOptions `bson:"options"`
+	Database   string       `bson:"-"` // Not in MongoDB response
+	Collection string       `bson:"-"` // Not in MongoDB response
+	Keys       IndexKeys    `bson:"key"`
+	Options    IndexOptions `bson:"inline"` // Inline embedding
 }
 
 func (k IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagnostics) {

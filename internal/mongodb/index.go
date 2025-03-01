@@ -5,10 +5,8 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type GetIndexOptions struct {
@@ -25,13 +23,11 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		"name":       index.Name,
 	})
 
-	// Determine if it's a wildcard index
 	isWildcardIndex := false
 	if _, exists := index.Keys["$**"]; exists {
 		isWildcardIndex = true
 	}
 
-	// Check if it's a 2d index
 	is2dIndex := false
 	for _, value := range index.Keys {
 		if value == "2d" {
@@ -40,7 +36,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		}
 	}
 
-	// Check if it's a text index
 	isTextIndex := false
 	for _, value := range index.Keys {
 		if value == "text" {
@@ -55,7 +50,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		SetName(index.Name).
 		SetVersion(version)
 
-	// Only set options if they are explicitly specified
 	if index.Options.Unique {
 		opts.SetUnique(index.Options.Unique)
 	}
@@ -68,7 +62,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		opts.SetHidden(index.Options.Hidden)
 	}
 
-	// Set 2d-specific options
 	if is2dIndex {
 		if index.Options.Bits > 0 {
 			opts.SetBits(index.Options.Bits)
@@ -81,7 +74,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		}
 	}
 
-	// In CreateIndex function, after other options:
 	if isTextIndex {
 		if index.Options.Weights != nil {
 			opts.SetWeights(index.Options.Weights)
@@ -97,7 +89,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		}
 	}
 
-	// Only set TTL for non-wildcard indexes
 	if index.Options.ExpireAfterSeconds > 0 && !isWildcardIndex {
 		opts.SetExpireAfterSeconds(index.Options.ExpireAfterSeconds)
 	}
@@ -110,7 +101,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		opts.PartialFilterExpression = index.Options.PartialFilterExpression
 	}
 
-	// Only set for wildcard indexes and if not empty
 	if isWildcardIndex && len(index.Options.WildcardProjection) > 0 {
 		opts.WildcardProjection = index.Options.WildcardProjection
 	}
@@ -143,139 +133,35 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 	}
 	defer cursor.Close(ctx)
 
-	var rawIndexes []bson.M
-	if err = cursor.All(ctx, &rawIndexes); err != nil {
+	var indexes []Index
+	if err = cursor.All(ctx, &indexes); err != nil {
 		return nil, err
 	}
 
 	tflog.Debug(ctx, "Index data from MongoDB", map[string]interface{}{
-		"indexes": rawIndexes,
+		"indexes": indexes,
 	})
 
-	for _, rawIndex := range rawIndexes {
-		if rawIndex["name"] == options.Name {
-			tflog.Debug(ctx, "Found matching index", map[string]interface{}{
-				"index": rawIndex,
-			})
+	for i := range indexes {
+		if indexes[i].Name == options.Name {
 
-			var index Index
-			index.Name = options.Name
-			index.Database = options.Database
-			index.Collection = options.Collection
+			indexes[i].Database = options.Database
+			indexes[i].Collection = options.Collection
 
-			// Decode keys
-			if keyValue, ok := rawIndex["key"].(bson.M); ok {
-				index.Keys = make(IndexKeys)
-
-				// Check if this is a text index
-				isTextIndex := false
-				if value, hasFts := keyValue["_fts"]; hasFts {
-					if valueStr, ok := value.(string); ok && valueStr == "text" {
-						isTextIndex = true
-					}
-				}
-
-				if isTextIndex {
-					// Handle text index keys
-					if weights, hasWeights := rawIndex["weights"].(bson.M); hasWeights && len(weights) > 0 {
-						for field := range weights {
-							index.Keys[field] = "text"
-						}
-					} else {
-						// Fallback if weights not found
-						index.Keys["_fts"] = "text"
-					}
-				} else {
-					// Handle standard indexes
-					for field, value := range keyValue {
-						index.Keys[field] = value
-					}
+			if _, hasFts := indexes[i].Keys["_fts"]; hasFts {
+				indexes[i].Keys = make(IndexKeys)
+				for field := range indexes[i].Options.Weights {
+					indexes[i].Keys[field] = "text"
 				}
 			}
 
-			// Process text index specific options
-			if textVersion, exists := rawIndex["textIndexVersion"].(int32); exists {
-				index.Options.TextIndexVersion = textVersion
-			}
-
-			if defaultLang, exists := rawIndex["default_language"].(string); exists {
-				index.Options.DefaultLanguage = defaultLang
-			}
-
-			if langOverride, exists := rawIndex["language_override"].(string); exists {
-				index.Options.LanguageOverride = langOverride
-			}
-
-			// Process weights for text indexes
-			if weights, exists := rawIndex["weights"].(bson.M); exists && len(weights) > 0 {
-				index.Options.Weights = make(map[string]int32)
-				for field, value := range weights {
-					if weight, ok := value.(int32); ok {
-						index.Options.Weights[field] = weight
-					}
+			if value, exists := indexes[i].Keys["$**"]; exists {
+				if intValue, ok := value.(int32); ok && intValue == 1 {
+					indexes[i].Keys["$**"] = "wildcard"
 				}
 			}
 
-			// In GetIndex function, add handling for 2d index options:
-			if bits, exists := rawIndex["bits"].(int32); exists {
-				index.Options.Bits = bits
-			}
-			if min, exists := rawIndex["min"].(float64); exists {
-				index.Options.Min = min
-			}
-			if max, exists := rawIndex["max"].(float64); exists {
-				index.Options.Max = max
-			}
-
-			// Process wildcard projection
-			if proj, exists := rawIndex["wildcardProjection"].(bson.M); exists && proj != nil {
-				index.Options.WildcardProjection = make(map[string]int32)
-				for key, value := range proj {
-					if v, ok := value.(int32); ok {
-						index.Options.WildcardProjection[key] = v
-					} else if v, ok := value.(int); ok {
-						index.Options.WildcardProjection[key] = int32(v)
-					}
-				}
-			}
-
-			if collation, exists := rawIndex["collation"].(bson.M); exists && collation != nil {
-				// Map specific fields we care about
-				userCollation := mongooptions.Collation{
-					Locale:          collation["locale"].(string),
-					Strength:        int(collation["strength"].(int32)),
-					CaseLevel:       collation["caseLevel"].(bool),
-					Alternate:       collation["alternate"].(string),
-					Backwards:       collation["backwards"].(bool),
-					CaseFirst:       collation["caseFirst"].(string),
-					MaxVariable:     collation["maxVariable"].(string),
-					NumericOrdering: collation["numericOrdering"].(bool),
-				}
-				index.Options.Collation = &userCollation
-			}
-
-			// Process partial filter expression
-			if pfe, exists := rawIndex["partialFilterExpression"].(bson.M); exists && pfe != nil {
-				index.Options.PartialFilterExpression = make(map[string]interface{})
-				for key, value := range pfe {
-					index.Options.PartialFilterExpression[key] = value
-				}
-			}
-
-			// Process common index options
-			if v, ok := rawIndex["unique"].(bool); ok {
-				index.Options.Unique = v
-			}
-
-			if v, ok := rawIndex["sparse"].(bool); ok {
-				index.Options.Sparse = v
-			}
-
-			if v, ok := rawIndex["v"].(int32); ok {
-				index.Options.Version = v
-			}
-
-			return &index, nil
+			return &indexes[i], nil
 		}
 	}
 
