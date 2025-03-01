@@ -27,17 +27,14 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 
 	// Determine if it's a wildcard index
 	isWildcardIndex := false
-	for _, key := range index.Keys {
-		if key.Type == "wildcard" {
-			isWildcardIndex = true
-			break
-		}
+	if _, exists := index.Keys["$**"]; exists {
+		isWildcardIndex = true
 	}
 
 	// Check if it's a 2d index
 	is2dIndex := false
-	for _, key := range index.Keys {
-		if key.Type == "2d" {
+	for _, value := range index.Keys {
+		if value == "2d" {
 			is2dIndex = true
 			break
 		}
@@ -45,8 +42,8 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 
 	// Check if it's a text index
 	isTextIndex := false
-	for _, key := range index.Keys {
-		if key.Type == "text" {
+	for _, value := range index.Keys {
+		if value == "text" {
 			isTextIndex = true
 			break
 		}
@@ -139,7 +136,6 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 }
 
 func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index, error) {
-
 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
 	cursor, err := collection.Indexes().List(ctx)
 	if err != nil {
@@ -169,7 +165,7 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 
 			// Decode keys
 			if keyValue, ok := rawIndex["key"].(bson.M); ok {
-				index.Keys = make(IndexKeys, 0)
+				index.Keys = make(IndexKeys)
 
 				// Check if this is a text index
 				isTextIndex := false
@@ -181,43 +177,18 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 
 				if isTextIndex {
 					// Handle text index keys
-					//if weights, hasWeights := rawIndex["weights"].(bson.M); hasWeights {
 					if weights, hasWeights := rawIndex["weights"].(bson.M); hasWeights && len(weights) > 0 {
 						for field := range weights {
-							index.Keys = append(index.Keys, IndexKey{
-								Field: field,
-								Type:  "text",
-							})
+							index.Keys[field] = "text"
 						}
 					} else {
 						// Fallback if weights not found
-						index.Keys = append(index.Keys, IndexKey{
-							Field: "_fts",
-							Type:  "text",
-						})
+						index.Keys["_fts"] = "text"
 					}
 				} else {
 					// Handle standard indexes
 					for field, value := range keyValue {
-						fieldType := fmt.Sprintf("%v", value)
-
-						// Special case for wildcard indexes
-						if field == "$**" && value == int32(1) {
-							fieldType = "wildcard"
-						} else {
-							// Standard index type mapping
-							switch value {
-							case int32(1):
-								fieldType = "1"
-							case int32(-1):
-								fieldType = "-1"
-							}
-						}
-
-						index.Keys = append(index.Keys, IndexKey{
-							Field: field,
-							Type:  fieldType,
-						})
+						index.Keys[field] = value
 					}
 				}
 			}
@@ -287,12 +258,7 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 			if pfe, exists := rawIndex["partialFilterExpression"].(bson.M); exists && pfe != nil {
 				index.Options.PartialFilterExpression = make(map[string]interface{})
 				for key, value := range pfe {
-					switch v := value.(type) {
-					case int32:
-						index.Options.PartialFilterExpression[key] = fmt.Sprintf("%d", v)
-					default:
-						index.Options.PartialFilterExpression[key] = fmt.Sprintf("%v", v)
-					}
+					index.Options.PartialFilterExpression[key] = value
 				}
 			}
 

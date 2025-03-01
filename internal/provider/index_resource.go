@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -18,9 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -52,7 +49,7 @@ type IndexResourceModel struct {
 	Database                types.String    `tfsdk:"database"`
 	Collection              types.String    `tfsdk:"collection"`
 	Name                    types.String    `tfsdk:"name"`
-	Keys                    types.Set       `tfsdk:"keys"`
+	Keys                    types.Map       `tfsdk:"keys"`
 	Collation               *CollationModel `tfsdk:"collation"`
 	WildcardProjection      types.Map       `tfsdk:"wildcard_projection"`
 	PartialFilterExpression types.Map       `tfsdk:"partial_filter_expression"`
@@ -169,32 +166,12 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					},
 				},
 			},
-			"keys": schema.SetNestedAttribute{
+			"keys": schema.MapAttribute{
 				Description: "Index key fields",
 				Required:    true,
-				PlanModifiers: []planmodifier.Set{
-					setplanmodifier.RequiresReplace(),
-				},
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"field": schema.StringAttribute{
-							Description: "Field name",
-							Required:    true,
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.RequiresReplace(),
-							},
-						},
-						"type": schema.StringAttribute{
-							Description: "Index type (1, -1, 2dsphere, text, 2d, wildcard)",
-							Required:    true,
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.RequiresReplace(),
-							},
-							Validators: []validator.String{
-								stringvalidator.OneOf("1", "-1", "2dsphere", "text", "2d", "wildcard", "hashed"),
-							},
-						},
-					},
+				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.Map{
+					mapplanmodifier.RequiresReplace(),
 				},
 			},
 			"unique": schema.BoolAttribute{
@@ -331,23 +308,20 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		return
 	}
 
-	// Get keys for validation
-	var keys []mongodb.IndexKey
+
+	var keysMap map[string]string
 	if !config.Keys.IsNull() {
-		resp.Diagnostics.Append(config.Keys.ElementsAs(ctx, &keys, false)...)
+		resp.Diagnostics.Append(config.Keys.ElementsAs(ctx, &keysMap, false)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
 
-	// Validate TTL index
+	
 	if !config.ExpireAfterSeconds.IsNull() {
 		isWildcard := false
-		for _, key := range keys {
-			if key.Type == "wildcard" {
-				isWildcard = true
-				break
-			}
+		if _, exists := keysMap["$**"]; exists {
+			isWildcard = true
 		}
 
 		if isWildcard {
@@ -357,10 +331,10 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			return
 		}
 
-		// Check for date field
+	
 		hasDateField := false
-		for _, key := range keys {
-			fieldName := strings.ToLower(key.Field)
+		for field := range keysMap {
+			fieldName := strings.ToLower(field)
 			if strings.HasSuffix(fieldName, "at") ||
 				strings.HasSuffix(fieldName, "date") ||
 				strings.HasSuffix(fieldName, "time") {
@@ -377,54 +351,17 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
-	// Validate WildcardProjection
-	if !config.WildcardProjection.IsNull() {
-		var projection map[string]int64
-		diags := config.WildcardProjection.ElementsAs(ctx, &projection, false)
-		if diags.HasError() {
-			resp.Diagnostics.Append(diags...)
-			resp.Diagnostics.AddError(
-				"Invalid wildcard projection",
-				"Failed to parse wildcard projection data")
-			return
-		}
 
-		// Validate inclusion/exclusion consistency
-		hasInclusion := false
-		hasExclusion := false
-
-		for k, v := range projection {
-			if v == 1 {
-				hasInclusion = true
-			} else if v == 0 {
-				hasExclusion = true
-			} else {
-				resp.Diagnostics.AddError(
-					"Invalid wildcard projection value",
-					fmt.Sprintf("Values must be 1 or 0, got %d for field %q", v, k))
-				return
-			}
-		}
-
-		if hasInclusion && hasExclusion {
-			resp.Diagnostics.AddError(
-				"Invalid wildcard projection",
-				"Cannot mix inclusions (1) and exclusions (0) in wildcard_projection")
-			return
-		}
-	}
-
-	// Validate text index options
 	isTextIndex := false
-	for _, key := range keys {
-		if key.Type == "text" {
+	for _, typeValue := range keysMap {
+		if typeValue == "text" {
 			isTextIndex = true
 			break
 		}
 	}
 
 	if isTextIndex {
-		// Validate weights map values are positive
+
 		if !config.Weights.IsNull() {
 			var weights map[string]int64
 			diags := config.Weights.ElementsAs(ctx, &weights, false)
@@ -443,7 +380,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			}
 		}
 
-		// Validate text index version if specified
+
 		if !config.TextIndexVersion.IsNull() {
 			version := config.TextIndexVersion.ValueInt64()
 			if version < 1 || version > 3 {
@@ -455,7 +392,6 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
-	// Validate PartialFilterExpression
 	if !config.PartialFilterExpression.IsNull() {
 		var filterExpr map[string]string
 		diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
@@ -526,7 +462,6 @@ func (c *CollationModel) toMongoCollation() *options.Collation {
 	return collation
 }
 
-// Convert string map values to appropriate MongoDB types
 func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 	result := make(map[string]interface{})
 	for k, v := range strMap {
@@ -544,6 +479,7 @@ func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 }
 
 func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+
 	if !r.checkClient(resp.Diagnostics) {
 		return
 	}
@@ -555,23 +491,42 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Convert keys
-	var keys []mongodb.IndexKey
-	diags = plan.Keys.ElementsAs(ctx, &keys, false)
+	var keysMap map[string]string
+	diags = plan.Keys.ElementsAs(ctx, &keysMap, false)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Create the index model
+	indexKeys := make(mongodb.IndexKeys)
+	for field, typeStr := range keysMap {
+		// Special handling for wildcard in the value conversion
+		if field == "$**" && typeStr == "wildcard" {
+			indexKeys[field] = 1
+		} else {
+			var value interface{}
+			switch typeStr {
+			case "1", "asc":
+				value = 1
+			case "-1", "desc":
+				value = -1
+			case "2d", "2dsphere", "text", "hashed":
+				value = typeStr
+			default:
+				value = typeStr
+			}
+			indexKeys[field] = value
+		}
+	}
+
+
 	index := &mongodb.Index{
 		Name:       plan.Name.ValueString(),
 		Database:   plan.Database.ValueString(),
 		Collection: plan.Collection.ValueString(),
-		Keys:       keys,
+		Keys:       indexKeys,
 	}
 
-	// Set options based on plan values
 	if !plan.Unique.IsNull() {
 		index.Options.Unique = plan.Unique.ValueBool()
 	}
@@ -629,12 +584,12 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.TextIndexVersion = int32(plan.TextIndexVersion.ValueInt64())
 	}
 
-	// Process collation
+
 	if plan.Collation != nil {
 		index.Options.Collation = plan.Collation.toMongoCollation()
 	}
 
-	// Process wildcard projection
+
 	if !plan.WildcardProjection.IsNull() {
 		var projectionInt64 map[string]int64
 		diags = plan.WildcardProjection.ElementsAs(ctx, &projectionInt64, false)
@@ -643,7 +598,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 			return
 		}
 
-		// Convert int64 to int32
+
 		projection := make(map[string]int32)
 		for k, v := range projectionInt64 {
 			projection[k] = int32(v)
@@ -651,7 +606,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.WildcardProjection = projection
 	}
 
-	// Process partial filter expression
+
 	if !plan.PartialFilterExpression.IsNull() {
 		var filterExpr map[string]string
 		diags = plan.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
@@ -662,7 +617,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.PartialFilterExpression = stringMapToMongoTypes(filterExpr)
 	}
 
-	// Create index
+
 	_, err := r.client.CreateIndex(ctx, index)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -672,10 +627,8 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	
 	plan.Version = types.Int64Value(int64(mongodb.DefaultIndexVersion))
 
-	
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -708,20 +661,40 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	// Update keys
-	if index.Keys != nil {
-		keysSet, diags := index.Keys.ToTerraformSet(ctx)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
-			return
+
+	keysMap := make(map[string]string)
+	for field, value := range index.Keys {
+		var typeStr string
+		switch v := value.(type) {
+		case int, int32, int64:
+			if field == "$**" && (v == 1 || v == int64(1) || v == int32(1)) {
+				// Special case for wildcard indexes
+				typeStr = "wildcard"
+			} else if v == 1 || v == int64(1) || v == int32(1) {
+				typeStr = "1"
+			} else if v == -1 || v == int64(-1) || v == int32(-1) {
+				typeStr = "-1"
+			} else {
+				typeStr = fmt.Sprintf("%v", v)
+			}
+		case string:
+			typeStr = v
+		default:
+			typeStr = fmt.Sprintf("%v", v)
 		}
-		state.Keys = *keysSet
+		keysMap[field] = typeStr
 	}
 
+	keysValue, diags := types.MapValueFrom(ctx, types.StringType, keysMap)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state.Keys = keysValue
+
 	
-	// Handle PartialFilterExpression
 	if index.Options.PartialFilterExpression != nil {
-		// Convert each value to string for Terraform
+		
 		strMap := make(map[string]string)
 		for k, v := range index.Options.PartialFilterExpression {
 			strMap[k] = fmt.Sprintf("%v", v)
@@ -736,7 +709,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.PartialFilterExpression = types.MapNull(types.StringType)
 	}
 
-	// Handle Collation
+
 	if index.Options.Collation != nil {
 		if state.Collation == nil {
 			state.Collation = &CollationModel{}
@@ -754,9 +727,8 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.Collation = nil
 	}
 
-	
 	if index.Options.WildcardProjection != nil {
-		
+
 		int64Map := make(map[string]int64)
 		for k, v := range index.Options.WildcardProjection {
 			int64Map[k] = int64(v)
@@ -771,7 +743,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.WildcardProjection = types.MapNull(types.Int64Type)
 	}
 
-	// Update 2d index options
+	
 	if index.Options.Bits > 0 {
 		state.Bits = types.Int64Value(int64(index.Options.Bits))
 	} else {
@@ -824,7 +796,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// Let RequiresReplace handle changes
+	
 	resp.Diagnostics.Append(resp.State.Set(ctx, req.Plan)...)
 }
 

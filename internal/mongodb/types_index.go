@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -18,7 +19,7 @@ type IndexKey struct {
 
 const DefaultIndexVersion int32 = 2
 
-type IndexKeys []IndexKey
+type IndexKeys map[string]interface{}
 
 type IndexOptions struct {
 	Unique                  bool                   `bson:"unique,omitempty"`
@@ -47,14 +48,35 @@ type Index struct {
 	Options    IndexOptions `bson:"options"`
 }
 
-func (k *IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagnostics) {
+func (k IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagnostics) {
 	var keys []basetypes.ObjectValue
 	keyType := types.ObjectType{
 		AttrTypes: IndexKeyAttributeTypes,
 	}
 
-	for _, key := range *k {
-		keyObj, d := types.ObjectValueFrom(ctx, IndexKeyAttributeTypes, key)
+	for field, typeValue := range k {
+		var typeStr string
+		switch v := typeValue.(type) {
+		case int, int32, int64:
+			if v == 1 {
+				typeStr = "1"
+			} else if v == -1 {
+				typeStr = "-1"
+			} else {
+				typeStr = fmt.Sprintf("%v", v)
+			}
+		case string:
+			typeStr = v
+		default:
+			typeStr = fmt.Sprintf("%v", v)
+		}
+
+		key := map[string]attr.Value{
+			"field": types.StringValue(field),
+			"type":  types.StringValue(typeStr),
+		}
+
+		keyObj, d := types.ObjectValue(IndexKeyAttributeTypes, key)
 		if d.HasError() {
 			return nil, d
 		}
@@ -68,27 +90,10 @@ func (k *IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagno
 	return &keysList, nil
 }
 
-func (k *IndexKeys) toBson() bson.D {
+func (k IndexKeys) toBson() bson.D {
 	out := bson.D{}
-	for _, key := range *k {
-		var value interface{}
-		switch key.Type {
-		case "1", "asc":
-			value = 1
-		case "-1", "desc":
-			value = -1
-		case "2d":
-			value = "2d"
-		case "2dsphere":
-			value = "2dsphere"
-		case "wildcard":
-			value = 1
-		case "text":
-			value = "text"
-		default:
-			value = 1
-		}
-		out = append(out, bson.E{Key: key.Field, Value: value})
+	for field, value := range k {
+		out = append(out, bson.E{Key: field, Value: value})
 	}
 	return out
 }
