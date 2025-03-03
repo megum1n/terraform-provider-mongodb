@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -19,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -316,6 +316,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
+
 	if !config.ExpireAfterSeconds.IsNull() {
 		isWildcard := false
 		if _, exists := keysMap["$**"]; exists {
@@ -328,6 +329,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 				"TTL index (expire_after_seconds) cannot be used with wildcard indexes")
 			return
 		}
+
 
 		hasDateField := false
 		for field := range keysMap {
@@ -348,6 +350,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
+
 	isTextIndex := false
 	for _, typeValue := range keysMap {
 		if typeValue == "text" {
@@ -357,6 +360,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 	}
 
 	if isTextIndex {
+
 		if !config.Weights.IsNull() {
 			var weights map[string]int64
 			diags := config.Weights.ElementsAs(ctx, &weights, false)
@@ -375,6 +379,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			}
 		}
 
+
 		if !config.TextIndexVersion.IsNull() {
 			version := config.TextIndexVersion.ValueInt64()
 			if version < 1 || version > 3 {
@@ -386,6 +391,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
+	
 	if !config.PartialFilterExpression.IsNull() {
 		var filterExpr map[string]string
 		diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
@@ -397,6 +403,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			return
 		}
 
+		
 		validOperators := map[string]bool{
 			"$eq": true, "$exists": true, "$gt": true, "$gte": true,
 			"$lt": true, "$lte": true, "$type": true, "$and": true,
@@ -419,6 +426,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 }
+
 
 func (c *CollationModel) toMongoCollation() *options.Collation {
 	if c == nil {
@@ -453,6 +461,7 @@ func (c *CollationModel) toMongoCollation() *options.Collation {
 
 	return collation
 }
+
 
 func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 	result := make(map[string]interface{})
@@ -490,9 +499,10 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	
 	indexKeys := make(mongodb.IndexKeys)
 	for field, typeStr := range keysMap {
-
+		
 		if field == "$**" && typeStr == "wildcard" {
 			indexKeys[field] = 1
 		} else {
@@ -511,6 +521,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		}
 	}
 
+	
 	index := &mongodb.Index{
 		Name:       plan.Name.ValueString(),
 		Database:   plan.Database.ValueString(),
@@ -518,6 +529,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		Keys:       indexKeys,
 	}
 
+	
 	if !plan.Unique.IsNull() {
 		index.Options.Unique = plan.Unique.ValueBool()
 	}
@@ -548,6 +560,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.Max = plan.Max.ValueFloat64()
 	}
 
+	
 	if !plan.Weights.IsNull() {
 		var weightsInt64 map[string]int64
 		diags = plan.Weights.ElementsAs(ctx, &weightsInt64, false)
@@ -574,10 +587,12 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.TextIndexVersion = int32(plan.TextIndexVersion.ValueInt64())
 	}
 
+	
 	if plan.Collation != nil {
 		index.Options.Collation = plan.Collation.toMongoCollation()
 	}
 
+	
 	if !plan.WildcardProjection.IsNull() {
 		var projectionInt64 map[string]int64
 		diags = plan.WildcardProjection.ElementsAs(ctx, &projectionInt64, false)
@@ -586,6 +601,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 			return
 		}
 
+		
 		projection := make(map[string]int32)
 		for k, v := range projectionInt64 {
 			projection[k] = int32(v)
@@ -593,6 +609,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.WildcardProjection = projection
 	}
 
+	
 	if !plan.PartialFilterExpression.IsNull() {
 		var filterExpr map[string]string
 		diags = plan.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
@@ -602,6 +619,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		}
 		index.Options.PartialFilterExpression = stringMapToMongoTypes(filterExpr)
 	}
+
 
 	_, err := r.client.CreateIndex(ctx, index)
 	if err != nil {
@@ -652,7 +670,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		switch v := value.(type) {
 		case int, int32, int64:
 			if field == "$**" && (v == 1 || v == int64(1) || v == int32(1)) {
-
+		
 				typeStr = "wildcard"
 			} else if v == 1 || v == int64(1) || v == int32(1) {
 				typeStr = "1"
@@ -676,8 +694,9 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 	state.Keys = keysValue
 
+	
 	if index.Options.PartialFilterExpression != nil {
-
+	
 		strMap := make(map[string]string)
 		for k, v := range index.Options.PartialFilterExpression {
 			strMap[k] = fmt.Sprintf("%v", v)
@@ -691,6 +710,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	} else {
 		state.PartialFilterExpression = types.MapNull(types.StringType)
 	}
+
 
 	if index.Options.Collation != nil {
 		if state.Collation == nil {
@@ -725,6 +745,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		state.WildcardProjection = types.MapNull(types.Int64Type)
 	}
 
+	
 	if index.Options.Bits > 0 {
 		state.Bits = types.Int64Value(int64(index.Options.Bits))
 	} else {
@@ -777,6 +798,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	
 	resp.Diagnostics.Append(resp.State.Set(ctx, req.Plan)...)
 }
 
@@ -803,7 +825,10 @@ func (r *IndexResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 			err.Error(),
 		)
 	}
+	tflog.Trace(ctx, "Index deleted")
+	resp.State.RemoveResource(ctx)
 }
+
 
 func (r *IndexResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	idParts := strings.Split(req.ID, ".")
@@ -815,9 +840,182 @@ func (r *IndexResource) ImportState(ctx context.Context, req resource.ImportStat
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("database"), idParts[0])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("collection"), idParts[1])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), idParts[2])...)
+	database := idParts[0]
+	collection := idParts[1]
+	indexName := idParts[2]
+
+
+	index, err := r.client.GetIndex(ctx, &mongodb.GetIndexOptions{
+		Name:       indexName,
+		Database:   database,
+		Collection: collection,
+	})
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Error importing index",
+			fmt.Sprintf("Failed to read index %s: %s", req.ID, err),
+		)
+		return
+	}
+
+
+	var state IndexResourceModel
+
+
+	state.Database = types.StringValue(database)
+	state.Collection = types.StringValue(collection)
+	state.Name = types.StringValue(indexName)
+
+
+	keysMap := make(map[string]string)
+	for field, value := range index.Keys {
+		var typeStr string
+		switch v := value.(type) {
+		case int, int32, int64:
+			if field == "$**" && (v == 1 || v == int64(1) || v == int32(1)) {
+				typeStr = "wildcard"
+			} else if v == 1 || v == int64(1) || v == int32(1) {
+				typeStr = "1"
+			} else if v == -1 || v == int64(-1) || v == int32(-1) {
+				typeStr = "-1"
+			} else {
+				typeStr = fmt.Sprintf("%v", v)
+			}
+		case string:
+			typeStr = v
+		default:
+			typeStr = fmt.Sprintf("%v", v)
+		}
+		keysMap[field] = typeStr
+	}
+
+	keysValue, diags := types.MapValueFrom(ctx, types.StringType, keysMap)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state.Keys = keysValue
+
+
+	if index.Options.PartialFilterExpression != nil && len(index.Options.PartialFilterExpression) > 0 {
+		strMap := make(map[string]string)
+		for k, v := range index.Options.PartialFilterExpression {
+			strMap[k] = fmt.Sprintf("%v", v)
+		}
+
+		pfMap, diags := types.MapValueFrom(ctx, types.StringType, strMap)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.PartialFilterExpression = pfMap
+		}
+	} else {
+		state.PartialFilterExpression = types.MapNull(types.StringType)
+	}
+
+
+	if index.Options.Collation != nil {
+		state.Collation = &CollationModel{
+			Locale:          types.StringValue(index.Options.Collation.Locale),
+			CaseLevel:       types.BoolValue(index.Options.Collation.CaseLevel),
+			CaseFirst:       types.StringValue(index.Options.Collation.CaseFirst),
+			Strength:        types.Int64Value(int64(index.Options.Collation.Strength)),
+			NumericOrdering: types.BoolValue(index.Options.Collation.NumericOrdering),
+			Alternate:       types.StringValue(index.Options.Collation.Alternate),
+			MaxVariable:     types.StringValue(index.Options.Collation.MaxVariable),
+			Backwards:       types.BoolValue(index.Options.Collation.Backwards),
+		}
+	} else {
+		state.Collation = nil
+	}
+
+	if index.Options.WildcardProjection != nil && len(index.Options.WildcardProjection) > 0 {
+		int64Map := make(map[string]int64)
+		for k, v := range index.Options.WildcardProjection {
+			int64Map[k] = int64(v)
+		}
+
+		wpMap, diags := types.MapValueFrom(ctx, types.Int64Type, int64Map)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.WildcardProjection = wpMap
+		}
+	} else {
+		state.WildcardProjection = types.MapNull(types.Int64Type)
+	}
+
+	state.Unique = types.BoolValue(index.Options.Unique)
+	state.Sparse = types.BoolValue(index.Options.Sparse)
+	state.Hidden = types.BoolValue(index.Options.Hidden)
+
+
+	if index.Options.ExpireAfterSeconds > 0 {
+		state.ExpireAfterSeconds = types.Int64Value(int64(index.Options.ExpireAfterSeconds))
+	} else {
+		state.ExpireAfterSeconds = types.Int64Null()
+	}
+
+	state.Version = types.Int64Value(int64(index.Options.Version))
+
+	if index.Options.SphereVersion > 0 {
+		state.SphereVersion = types.Int64Value(int64(index.Options.SphereVersion))
+	} else {
+		state.SphereVersion = types.Int64Null()
+	}
+
+
+	if index.Options.Bits > 0 {
+		state.Bits = types.Int64Value(int64(index.Options.Bits))
+	} else {
+		state.Bits = types.Int64Null()
+	}
+
+	if index.Options.Min != 0 {
+		state.Min = types.Float64Value(index.Options.Min)
+	} else {
+		state.Min = types.Float64Null()
+	}
+
+	if index.Options.Max != 0 {
+		state.Max = types.Float64Value(index.Options.Max)
+	} else {
+		state.Max = types.Float64Null()
+	}
+
+
+	if index.Options.Weights != nil && len(index.Options.Weights) > 0 {
+		weights := make(map[string]int64)
+		for k, v := range index.Options.Weights {
+			weights[k] = int64(v)
+		}
+		weightMap, diags := types.MapValueFrom(ctx, types.Int64Type, weights)
+		resp.Diagnostics.Append(diags...)
+		if !resp.Diagnostics.HasError() {
+			state.Weights = weightMap
+		}
+	} else {
+		state.Weights = types.MapNull(types.Int64Type)
+	}
+
+	if index.Options.DefaultLanguage != "" {
+		state.DefaultLanguage = types.StringValue(index.Options.DefaultLanguage)
+	} else {
+		state.DefaultLanguage = types.StringNull()
+	}
+
+	if index.Options.LanguageOverride != "" {
+		state.LanguageOverride = types.StringValue(index.Options.LanguageOverride)
+	} else {
+		state.LanguageOverride = types.StringNull()
+	}
+
+	if index.Options.TextIndexVersion > 0 {
+		state.TextIndexVersion = types.Int64Value(int64(index.Options.TextIndexVersion))
+	} else {
+		state.TextIndexVersion = types.Int64Null()
+	}
+
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *IndexResource) checkClient(diag diag.Diagnostics) bool {
