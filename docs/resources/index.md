@@ -19,7 +19,7 @@ Manages MongoDB indexes
 
 - `collection` (String) Collection name
 - `database` (String) Database name
-- `keys` (Attributes Set) Index key fields (see [below for nested schema](#nestedatt--keys))
+- `keys` (Map of String) Index key fields
 - `name` (String) Index name
 
 ### Optional
@@ -40,15 +40,6 @@ Manages MongoDB indexes
 - `version` (Number) The index version number (default: 2)
 - `weights` (Map of Number) Field weights for text index
 - `wildcard_projection` (Map of Number) Field inclusion/exclusion for wildcard index (1=include, 0=exclude)
-
-<a id="nestedatt--keys"></a>
-### Nested Schema for `keys`
-
-Required:
-
-- `field` (String) Field name
-- `type` (String) Index type (1, -1, 2dsphere, text, 2d, wildcard)
-
 
 <a id="nestedatt--collation"></a>
 ### Nested Schema for `collation`
