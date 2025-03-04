@@ -849,6 +849,7 @@ func (r *IndexResource) ImportState(ctx context.Context, req resource.ImportStat
 
 	var state IndexResourceModel
 
+	// Use the helper function to set state
 	resp.Diagnostics.Append(r.setStateFromIndex(ctx, &state, index)...)
 	if resp.Diagnostics.HasError() {
 		return
