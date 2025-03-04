@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/mapvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -17,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
@@ -188,12 +193,23 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				PlanModifiers: []planmodifier.Map{
 					mapplanmodifier.RequiresReplace(),
 				},
+				Validators: []validator.Map{
+					mapvalidator.KeysAre(
+						stringvalidator.RegexMatches(
+							regexp.MustCompile(`^[a-zA-Z0-9_\.]+(\.\$[a-zA-Z0-9]+)?$`),
+							"Valid field name or field with operator",
+						),
+					),
+				},
 			},
 			"expire_after_seconds": schema.Int64Attribute{
 				Description: "TTL in seconds for TTL indexes",
 				Optional:    true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
 				},
 			},
 			"version": schema.Int64Attribute{
@@ -221,6 +237,11 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				ElementType: types.Int64Type,
 				PlanModifiers: []planmodifier.Map{
 					mapplanmodifier.RequiresReplace(),
+				},
+				Validators: []validator.Map{
+					mapvalidator.ValueInt64sAre(
+						int64validator.OneOf(0, 1),
+					),
 				},
 			},
 			"hidden": schema.BoolAttribute{
@@ -258,6 +279,9 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				PlanModifiers: []planmodifier.Map{
 					mapplanmodifier.RequiresReplace(),
 				},
+				Validators: []validator.Map{
+					mapvalidator.ValueInt64sAre(int64validator.AtLeast(1)),
+				},
 			},
 			"default_language": schema.StringAttribute{
 				Description: "Default language for text index",
@@ -279,26 +303,12 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
 				},
+				Validators: []validator.Int64{
+					int64validator.Between(1, 3),
+				},
 			},
 		},
 	}
-}
-
-func (r *IndexResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	p, ok := req.ProviderData.(*MongodbProvider)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *MongodbProvider, got: %T.", req.ProviderData),
-		)
-		return
-	}
-
-	r.client = p.client
 }
 
 func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
@@ -316,6 +326,7 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
+	// Check TTL + wildcard incompatibility
 	if !config.ExpireAfterSeconds.IsNull() {
 		isWildcard := false
 		if _, exists := keysMap["$**"]; exists {
@@ -328,65 +339,9 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 				"TTL index (expire_after_seconds) cannot be used with wildcard indexes")
 			return
 		}
-
-		hasDateField := false
-		for field := range keysMap {
-			fieldName := strings.ToLower(field)
-			if strings.HasSuffix(fieldName, "at") ||
-				strings.HasSuffix(fieldName, "date") ||
-				strings.HasSuffix(fieldName, "time") {
-				hasDateField = true
-				break
-			}
-		}
-
-		if !hasDateField {
-			resp.Diagnostics.AddError(
-				"Invalid TTL Index Configuration",
-				"TTL index (expire_after_seconds) requires a date field")
-			return
-		}
 	}
 
-	isTextIndex := false
-	for _, typeValue := range keysMap {
-		if typeValue == "text" {
-			isTextIndex = true
-			break
-		}
-	}
-
-	if isTextIndex {
-
-		if !config.Weights.IsNull() {
-			var weights map[string]int64
-			diags := config.Weights.ElementsAs(ctx, &weights, false)
-			if diags.HasError() {
-				resp.Diagnostics.Append(diags...)
-				return
-			}
-
-			for field, weight := range weights {
-				if weight <= 0 {
-					resp.Diagnostics.AddError(
-						"Invalid weight value",
-						fmt.Sprintf("Weight for field %q must be positive, got: %d", field, weight))
-					return
-				}
-			}
-		}
-
-		if !config.TextIndexVersion.IsNull() {
-			version := config.TextIndexVersion.ValueInt64()
-			if version < 1 || version > 3 {
-				resp.Diagnostics.AddError(
-					"Invalid text index version",
-					"Text index version must be between 1 and 3")
-				return
-			}
-		}
-	}
-
+	// Validate partial filter expression operators
 	if !config.PartialFilterExpression.IsNull() {
 		var filterExpr map[string]string
 		diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
@@ -419,6 +374,23 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			}
 		}
 	}
+}
+
+func (r *IndexResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	p, ok := req.ProviderData.(*MongodbProvider)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Resource Configure Type",
+			fmt.Sprintf("Expected *MongodbProvider, got: %T.", req.ProviderData),
+		)
+		return
+	}
+
+	r.client = p.client
 }
 
 func (c *CollationModel) toMongoCollation() *options.Collation {
@@ -653,7 +625,7 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 		state.Keys = keysValue
 	}
 
-	if index.Options.PartialFilterExpression != nil && len(index.Options.PartialFilterExpression) > 0 {
+	if len(index.Options.PartialFilterExpression) > 0 {
 		strMap := make(map[string]string)
 		for k, v := range index.Options.PartialFilterExpression {
 			strMap[k] = fmt.Sprintf("%v", v)
@@ -701,7 +673,7 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 		state.Collation = nil
 	}
 
-	if index.Options.WildcardProjection != nil && len(index.Options.WildcardProjection) > 0 {
+	if len(index.Options.WildcardProjection) > 0 {
 		int64Map := make(map[string]int64)
 		for k, v := range index.Options.WildcardProjection {
 			int64Map[k] = int64(v)
@@ -748,7 +720,7 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 		state.Max = types.Float64Null()
 	}
 
-	if index.Options.Weights != nil && len(index.Options.Weights) > 0 {
+	if len(index.Options.Weights) > 0 {
 		weights := make(map[string]int64)
 		for k, v := range index.Options.Weights {
 			weights[k] = int64(v)
@@ -762,21 +734,18 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 		state.Weights = types.MapNull(types.Int64Type)
 	}
 
-	if index.Options.DefaultLanguage != "" {
-		state.DefaultLanguage = types.StringValue(index.Options.DefaultLanguage)
-	} else {
+	state.DefaultLanguage = types.StringValue(index.Options.DefaultLanguage)
+	if index.Options.DefaultLanguage == "" {
 		state.DefaultLanguage = types.StringNull()
 	}
 
-	if index.Options.LanguageOverride != "" {
-		state.LanguageOverride = types.StringValue(index.Options.LanguageOverride)
-	} else {
+	state.LanguageOverride = types.StringValue(index.Options.LanguageOverride)
+	if index.Options.LanguageOverride == "" {
 		state.LanguageOverride = types.StringNull()
 	}
 
-	if index.Options.TextIndexVersion > 0 {
-		state.TextIndexVersion = types.Int64Value(int64(index.Options.TextIndexVersion))
-	} else {
+	state.TextIndexVersion = types.Int64Value(int64(index.Options.TextIndexVersion))
+	if index.Options.TextIndexVersion == 0 {
 		state.TextIndexVersion = types.Int64Null()
 	}
 
@@ -812,6 +781,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
+	// Use the helper function to set state
 	resp.Diagnostics.Append(r.setStateFromIndex(ctx, &state, index)...)
 	if resp.Diagnostics.HasError() {
 		return
