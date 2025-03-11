@@ -318,6 +318,10 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		return
 	}
 
+	if config.Keys.IsNull() || config.Keys.IsUnknown() {
+		return
+	}
+
 	var keysMap map[string]string
 	if !config.Keys.IsNull() {
 		resp.Diagnostics.Append(config.Keys.ElementsAs(ctx, &keysMap, false)...)
@@ -326,7 +330,6 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 		}
 	}
 
-	// Check TTL + wildcard incompatibility
 	if !config.ExpireAfterSeconds.IsNull() {
 		isWildcard := false
 		if _, exists := keysMap["$**"]; exists {
@@ -444,7 +447,6 @@ func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 }
 
 func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-
 	if !r.checkClient(resp.Diagnostics) {
 		return
 	}
@@ -456,31 +458,33 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	var keysMap map[string]string
-	diags = plan.Keys.ElementsAs(ctx, &keysMap, false)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
+	// Safely handle Keys map
 	indexKeys := make(mongodb.IndexKeys)
-	for field, typeStr := range keysMap {
+	if !plan.Keys.IsNull() && !plan.Keys.IsUnknown() {
+		var keysMap map[string]string
+		diags = plan.Keys.ElementsAs(ctx, &keysMap, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 
-		if field == "$**" && typeStr == "wildcard" {
-			indexKeys[field] = 1
-		} else {
-			var value interface{}
-			switch typeStr {
-			case "1", "asc":
-				value = 1
-			case "-1", "desc":
-				value = -1
-			case "2d", "2dsphere", "text", "hashed":
-				value = typeStr
-			default:
-				value = typeStr
+		for field, typeStr := range keysMap {
+			if field == "$**" && typeStr == "wildcard" {
+				indexKeys[field] = 1
+			} else {
+				var value interface{}
+				switch typeStr {
+				case "1", "asc":
+					value = 1
+				case "-1", "desc":
+					value = -1
+				case "2d", "2dsphere", "text", "hashed":
+					value = typeStr
+				default:
+					value = typeStr
+				}
+				indexKeys[field] = value
 			}
-			indexKeys[field] = value
 		}
 	}
 
@@ -491,37 +495,39 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		Keys:       indexKeys,
 	}
 
-	if !plan.Unique.IsNull() {
+	if !plan.Unique.IsNull() && !plan.Unique.IsUnknown() {
 		index.Options.Unique = plan.Unique.ValueBool()
 	}
 
-	if !plan.Sparse.IsNull() {
+	if !plan.Sparse.IsNull() && !plan.Sparse.IsUnknown() {
 		index.Options.Sparse = plan.Sparse.ValueBool()
 	}
 
-	if !plan.Hidden.IsNull() {
+	if !plan.Hidden.IsNull() && !plan.Hidden.IsUnknown() {
 		index.Options.Hidden = plan.Hidden.ValueBool()
 	}
 
-	if !plan.ExpireAfterSeconds.IsNull() {
+	if !plan.ExpireAfterSeconds.IsNull() && !plan.ExpireAfterSeconds.IsUnknown() {
 		index.Options.ExpireAfterSeconds = int32(plan.ExpireAfterSeconds.ValueInt64())
 	}
 
-	if !plan.SphereVersion.IsNull() {
+	if !plan.SphereVersion.IsNull() && !plan.SphereVersion.IsUnknown() {
 		index.Options.SphereVersion = int32(plan.SphereVersion.ValueInt64())
 	}
 
-	if !plan.Bits.IsNull() {
+	if !plan.Bits.IsNull() && !plan.Bits.IsUnknown() {
 		index.Options.Bits = int32(plan.Bits.ValueInt64())
 	}
-	if !plan.Min.IsNull() {
+
+	if !plan.Min.IsNull() && !plan.Min.IsUnknown() {
 		index.Options.Min = plan.Min.ValueFloat64()
 	}
-	if !plan.Max.IsNull() {
+
+	if !plan.Max.IsNull() && !plan.Max.IsUnknown() {
 		index.Options.Max = plan.Max.ValueFloat64()
 	}
 
-	if !plan.Weights.IsNull() {
+	if !plan.Weights.IsNull() && !plan.Weights.IsUnknown() {
 		var weightsInt64 map[string]int64
 		diags = plan.Weights.ElementsAs(ctx, &weightsInt64, false)
 		resp.Diagnostics.Append(diags...)
@@ -535,15 +541,15 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.Weights = weights
 	}
 
-	if !plan.DefaultLanguage.IsNull() {
+	if !plan.DefaultLanguage.IsNull() && !plan.DefaultLanguage.IsUnknown() {
 		index.Options.DefaultLanguage = plan.DefaultLanguage.ValueString()
 	}
 
-	if !plan.LanguageOverride.IsNull() {
+	if !plan.LanguageOverride.IsNull() && !plan.LanguageOverride.IsUnknown() {
 		index.Options.LanguageOverride = plan.LanguageOverride.ValueString()
 	}
 
-	if !plan.TextIndexVersion.IsNull() {
+	if !plan.TextIndexVersion.IsNull() && !plan.TextIndexVersion.IsUnknown() {
 		index.Options.TextIndexVersion = int32(plan.TextIndexVersion.ValueInt64())
 	}
 
@@ -551,7 +557,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.Collation = plan.Collation.toMongoCollation()
 	}
 
-	if !plan.WildcardProjection.IsNull() {
+	if !plan.WildcardProjection.IsNull() && !plan.WildcardProjection.IsUnknown() {
 		var projectionInt64 map[string]int64
 		diags = plan.WildcardProjection.ElementsAs(ctx, &projectionInt64, false)
 		resp.Diagnostics.Append(diags...)
@@ -566,7 +572,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		index.Options.WildcardProjection = projection
 	}
 
-	if !plan.PartialFilterExpression.IsNull() {
+	if !plan.PartialFilterExpression.IsNull() && !plan.PartialFilterExpression.IsUnknown() {
 		var filterExpr map[string]string
 		diags = plan.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
 		resp.Diagnostics.Append(diags...)
@@ -829,8 +835,15 @@ func (r *IndexResource) ImportState(ctx context.Context, req resource.ImportStat
 }
 
 func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	// MongoDB indexes are immutable, so just setting the plan as the new state
+	var plan IndexResourceModel
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, req.Plan)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *IndexResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
