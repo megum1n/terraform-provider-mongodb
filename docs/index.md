@@ -3,12 +3,12 @@
 page_title: "mongodb Provider"
 subcategory: ""
 description: |-
-  MongoDB user and role management
+  MongoDB resources management
 ---
 
 # mongodb Provider
 
-MongoDB user and role management
+MongoDB resources management
 
 
 

@@ -51,7 +51,7 @@ func (p *MongodbProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 
 func (p *MongodbProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "MongoDB user and role management",
+		MarkdownDescription: "MongoDB resources management",
 
 		Attributes: map[string]schema.Attribute{
 			"hosts": schema.ListAttribute{
