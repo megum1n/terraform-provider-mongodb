@@ -29,17 +29,21 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	}
 
 	is2dIndex := false
+
 	for _, value := range index.Keys {
 		if value == "2d" {
 			is2dIndex = true
+
 			break
 		}
 	}
 
 	isTextIndex := false
+
 	for _, value := range index.Keys {
 		if value == "text" {
 			isTextIndex = true
+
 			break
 		}
 	}
@@ -66,9 +70,11 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		if index.Options.Bits > 0 {
 			opts.SetBits(index.Options.Bits)
 		}
+
 		if index.Options.Min != 0 {
 			opts.SetMin(index.Options.Min)
 		}
+
 		if index.Options.Max != 0 {
 			opts.SetMax(index.Options.Max)
 		}
@@ -78,12 +84,15 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 		if index.Options.Weights != nil {
 			opts.SetWeights(index.Options.Weights)
 		}
+
 		if index.Options.DefaultLanguage != "" {
 			opts.SetDefaultLanguage(index.Options.DefaultLanguage)
 		}
+
 		if index.Options.LanguageOverride != "" {
 			opts.SetLanguageOverride(index.Options.LanguageOverride)
 		}
+
 		if index.Options.TextIndexVersion > 0 {
 			opts.SetTextVersion(index.Options.TextIndexVersion)
 		}
@@ -111,13 +120,15 @@ func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) 
 	}
 
 	collection := c.mongo.Database(index.Database).Collection(index.Collection)
+
 	indexName, err := collection.Indexes().CreateOne(ctx, indexModel)
 	if err != nil {
-		return nil, fmt.Errorf("error creating index: %v", err)
+		return nil, fmt.Errorf("error creating index: %w", err)
 	}
 
 	index.Name = indexName
 	index.Options.Version = version
+
 	return c.GetIndex(ctx, &GetIndexOptions{
 		Name:       index.Name,
 		Database:   index.Database,
@@ -131,7 +142,15 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+			tflog.Error(ctx, "error closing cursor", map[string]interface{}{
+				"err": err,
+			})
+		}
+	}(cursor, ctx)
 
 	var indexes []Index
 	if err = cursor.All(ctx, &indexes); err != nil {
@@ -144,7 +163,6 @@ func (c *Client) GetIndex(ctx context.Context, options *GetIndexOptions) (*Index
 
 	for i := range indexes {
 		if indexes[i].Name == options.Name {
-
 			indexes[i].Database = options.Database
 			indexes[i].Collection = options.Collection
 
@@ -180,5 +198,6 @@ func (c *Client) DeleteIndex(ctx context.Context, options *GetIndexOptions) erro
 
 	collection := c.mongo.Database(options.Database).Collection(options.Collection)
 	_, err := collection.Indexes().DropOne(ctx, options.Name)
+
 	return err
 }

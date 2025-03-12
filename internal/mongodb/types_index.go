@@ -50,36 +50,22 @@ type Index struct {
 
 func (k IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagnostics) {
 	var keys []basetypes.ObjectValue
+
 	keyType := types.ObjectType{
 		AttrTypes: IndexKeyAttributeTypes,
 	}
 
 	for field, typeValue := range k {
-		var typeStr string
-		switch v := typeValue.(type) {
-		case int, int32, int64:
-			if v == 1 {
-				typeStr = "1"
-			} else if v == -1 {
-				typeStr = "-1"
-			} else {
-				typeStr = fmt.Sprintf("%v", v)
-			}
-		case string:
-			typeStr = v
-		default:
-			typeStr = fmt.Sprintf("%v", v)
-		}
-
 		key := map[string]attr.Value{
 			"field": types.StringValue(field),
-			"type":  types.StringValue(typeStr),
+			"type":  types.StringValue(fmt.Sprintf("%v", typeValue)),
 		}
 
 		keyObj, d := types.ObjectValue(IndexKeyAttributeTypes, key)
 		if d.HasError() {
 			return nil, d
 		}
+
 		keys = append(keys, keyObj)
 	}
 
@@ -87,6 +73,7 @@ func (k IndexKeys) ToTerraformSet(ctx context.Context) (*types.Set, diag.Diagnos
 	if d.HasError() {
 		return nil, d
 	}
+
 	return &keysList, nil
 }
 
@@ -95,6 +82,7 @@ func (k IndexKeys) toBson() bson.D {
 	for field, value := range k {
 		out = append(out, bson.E{Key: field, Value: value})
 	}
+
 	return out
 }
 

@@ -24,8 +24,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/megum1n/terraform-provider-mongodb/internal/mongodb"
 )
 
 var (
@@ -311,7 +312,11 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 	}
 }
 
-func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+func (r *IndexResource) ValidateConfig(
+	ctx context.Context,
+	req resource.ValidateConfigRequest,
+	resp *resource.ValidateConfigResponse,
+) {
 	var config IndexResourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
 	if resp.Diagnostics.HasError() {
@@ -340,41 +345,52 @@ func (r *IndexResource) ValidateConfig(ctx context.Context, req resource.Validat
 			resp.Diagnostics.AddError(
 				"Invalid TTL Index Configuration",
 				"TTL index (expire_after_seconds) cannot be used with wildcard indexes")
+
 			return
 		}
 	}
 
 	// Validate partial filter expression operators
-	if !config.PartialFilterExpression.IsNull() {
-		var filterExpr map[string]string
-		diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
-		if diags.HasError() {
-			resp.Diagnostics.Append(diags...)
+	if config.PartialFilterExpression.IsNull() {
+		return
+	}
+
+	var filterExpr map[string]string
+
+	diags := config.PartialFilterExpression.ElementsAs(ctx, &filterExpr, false)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		resp.Diagnostics.AddError(
+			"Error parsing partial filter expression",
+			"Failed to parse filter expression data")
+
+		return
+	}
+
+	validOperators := map[string]bool{
+		"$eq": true, "$exists": true, "$gt": true, "$gte": true,
+		"$lt": true, "$lte": true, "$type": true, "$and": true,
+		"$or": true, "$in": true,
+	}
+
+	for k := range filterExpr {
+		if !strings.Contains(k, ".$") {
+			continue
+		}
+
+		parts := strings.Split(k, ".$")
+		if len(parts) <= 1 {
+			continue
+		}
+
+		op := "$" + parts[1]
+		if !validOperators[op] {
 			resp.Diagnostics.AddError(
-				"Error parsing partial filter expression",
-				"Failed to parse filter expression data")
+				"Invalid partial filter expression",
+				fmt.Sprintf("Operator %s is not supported. "+
+					"Supported operators: $eq, $exists, $gt, $gte, $lt, $lte, $type, $and, $or, $in", op))
+
 			return
-		}
-
-		validOperators := map[string]bool{
-			"$eq": true, "$exists": true, "$gt": true, "$gte": true,
-			"$lt": true, "$lte": true, "$type": true, "$and": true,
-			"$or": true, "$in": true,
-		}
-
-		for k := range filterExpr {
-			if strings.Contains(k, ".$") {
-				parts := strings.Split(k, ".$")
-				if len(parts) > 1 {
-					op := "$" + parts[1]
-					if !validOperators[op] {
-						resp.Diagnostics.AddError(
-							"Invalid partial filter expression",
-							fmt.Sprintf("Operator %s is not supported. Supported operators: $eq, $exists, $gt, $gte, $lt, $lte, $type, $and, $or, $in", op))
-						return
-					}
-				}
-			}
 		}
 	}
 }
@@ -390,6 +406,7 @@ func (r *IndexResource) Configure(_ context.Context, req resource.ConfigureReque
 			"Unexpected Resource Configure Type",
 			fmt.Sprintf("Expected *MongodbProvider, got: %T.", req.ProviderData),
 		)
+
 		return
 	}
 
@@ -432,9 +449,10 @@ func (c *CollationModel) toMongoCollation() *options.Collation {
 
 func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 	result := make(map[string]interface{})
+
 	for k, v := range strMap {
 		if v == "true" || v == "false" {
-			result[k] = v == "true"
+			result[k] = v == "true" // TODO: ????
 		} else if num, err := strconv.ParseInt(v, 10, 64); err == nil {
 			result[k] = num
 		} else if fnum, err := strconv.ParseFloat(v, 64); err == nil {
@@ -443,6 +461,7 @@ func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 			result[k] = v
 		}
 	}
+
 	return result
 }
 
@@ -473,6 +492,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 				indexKeys[field] = 1
 			} else {
 				var value interface{}
+
 				switch typeStr {
 				case "1", "asc":
 					value = 1
@@ -483,6 +503,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 				default:
 					value = typeStr
 				}
+
 				indexKeys[field] = value
 			}
 		}
@@ -605,27 +626,15 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 
 	keysMap := make(map[string]string)
 	for field, value := range index.Keys {
-		var typeStr string
-		switch v := value.(type) {
-		case int, int32, int64:
-			if field == "$**" && (v == 1 || v == int64(1) || v == int32(1)) {
-				typeStr = "wildcard"
-			} else if v == 1 || v == int64(1) || v == int32(1) {
-				typeStr = "1"
-			} else if v == -1 || v == int64(-1) || v == int32(-1) {
-				typeStr = "-1"
-			} else {
-				typeStr = fmt.Sprintf("%v", v)
-			}
-		case string:
-			typeStr = v
-		default:
-			typeStr = fmt.Sprintf("%v", v)
+		if field == "$**" {
+			keysMap[field] = "wildcard"
+		} else {
+			keysMap[field] = fmt.Sprintf("%v", value)
 		}
-		keysMap[field] = typeStr
 	}
 
 	keysValue, d := types.MapValueFrom(ctx, types.StringType, keysMap)
+
 	diags.Append(d...)
 	if !diags.HasError() {
 		state.Keys = keysValue
@@ -633,11 +642,13 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 
 	if len(index.Options.PartialFilterExpression) > 0 {
 		strMap := make(map[string]string)
+
 		for k, v := range index.Options.PartialFilterExpression {
 			strMap[k] = fmt.Sprintf("%v", v)
 		}
 
 		pfMap, d := types.MapValueFrom(ctx, types.StringType, strMap)
+
 		diags.Append(d...)
 		if !diags.HasError() {
 			state.PartialFilterExpression = pfMap
@@ -681,11 +692,13 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 
 	if len(index.Options.WildcardProjection) > 0 {
 		int64Map := make(map[string]int64)
+
 		for k, v := range index.Options.WildcardProjection {
 			int64Map[k] = int64(v)
 		}
 
 		wpMap, d := types.MapValueFrom(ctx, types.Int64Type, int64Map)
+
 		diags.Append(d...)
 		if !diags.HasError() {
 			state.WildcardProjection = wpMap
@@ -728,10 +741,13 @@ func (r *IndexResource) setStateFromIndex(ctx context.Context, state *IndexResou
 
 	if len(index.Options.Weights) > 0 {
 		weights := make(map[string]int64)
+
 		for k, v := range index.Options.Weights {
 			weights[k] = int64(v)
 		}
+
 		weightMap, d := types.MapValueFrom(ctx, types.Int64Type, weights)
+
 		diags.Append(d...)
 		if !diags.HasError() {
 			state.Weights = weightMap
@@ -764,6 +780,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 
 	var state IndexResourceModel
+
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -784,6 +801,7 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 			"Error reading MongoDB index",
 			err.Error(),
 		)
+
 		return
 	}
 
@@ -796,13 +814,18 @@ func (r *IndexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func (r *IndexResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+func (r *IndexResource) ImportState(
+	ctx context.Context,
+	req resource.ImportStateRequest,
+	resp *resource.ImportStateResponse,
+) {
 	idParts := strings.Split(req.ID, ".")
 	if len(idParts) != 3 {
 		resp.Diagnostics.AddError(
 			"Invalid import ID",
 			"Import ID should be in the format: database.collection.index_name",
 		)
+
 		return
 	}
 
@@ -838,6 +861,7 @@ func (r *IndexResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// MongoDB indexes are immutable, so just setting the plan as the new state
 	var plan IndexResourceModel
 	diags := req.Plan.Get(ctx, &plan)
+
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -853,6 +877,7 @@ func (r *IndexResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 
 	var state IndexResourceModel
 	diags := req.State.Get(ctx, &state)
+
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -869,6 +894,7 @@ func (r *IndexResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 			err.Error(),
 		)
 	}
+
 	tflog.Trace(ctx, "Index deleted")
 	resp.State.RemoveResource(ctx)
 }
@@ -881,5 +907,6 @@ func (r *IndexResource) checkClient(diag diag.Diagnostics) bool {
 		)
 		return false
 	}
+
 	return true
 }
