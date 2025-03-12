@@ -449,11 +449,10 @@ func (c *CollationModel) toMongoCollation() *options.Collation {
 
 func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 	result := make(map[string]interface{})
+
 	for k, v := range strMap {
-		if v == "true" {
-			result[k] = true
-		} else if v == "false" {
-			result[k] = false
+		if v == "true" || v == "false" {
+			result[k] = v == "true"
 		} else if num, err := strconv.ParseInt(v, 10, 64); err == nil {
 			result[k] = num
 		} else if fnum, err := strconv.ParseFloat(v, 64); err == nil {
@@ -462,6 +461,7 @@ func stringMapToMongoTypes(strMap map[string]string) map[string]interface{} {
 			result[k] = v
 		}
 	}
+
 	return result
 }
 
