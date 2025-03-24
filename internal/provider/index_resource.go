@@ -782,19 +782,29 @@ func (r *IndexResource) ImportState(
 	req resource.ImportStateRequest,
 	resp *resource.ImportStateResponse,
 ) {
-	idParts := strings.Split(req.ID, ".")
-	if len(idParts) != 3 {
+	// Split only on the first two dots
+	firstDotPos := strings.Index(req.ID, ".")
+	if firstDotPos == -1 {
 		resp.Diagnostics.AddError(
 			"Invalid import ID",
 			"Import ID should be in the format: database.collection.index_name",
 		)
-
 		return
 	}
 
-	database := idParts[0]
-	collection := idParts[1]
-	indexName := idParts[2]
+	secondDotPos := strings.Index(req.ID[firstDotPos+1:], ".")
+	if secondDotPos == -1 {
+		resp.Diagnostics.AddError(
+			"Invalid import ID",
+			"Import ID should be in the format: database.collection.index_name",
+		)
+		return
+	}
+	secondDotPos += firstDotPos + 1
+
+	database := req.ID[:firstDotPos]
+	collection := req.ID[firstDotPos+1 : secondDotPos]
+	indexName := req.ID[secondDotPos+1:]
 
 	var plan IndexResourceModel
 
