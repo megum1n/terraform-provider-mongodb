@@ -364,7 +364,7 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					int32planmodifier.RequiresReplace(),
 				},
 				Validators: []validator.Int32{
-					int32validator.AtLeast(1),
+					int32validator.AtLeast(0),
 				},
 			},
 			"sparse": schema.BoolAttribute{
