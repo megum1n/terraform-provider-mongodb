@@ -352,12 +352,12 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"background": schema.BoolAttribute{
-                Description: "Whether the index should be built in the background",
-                Optional:    true,
-                PlanModifiers: []planmodifier.Bool{
-                    boolplanmodifier.RequiresReplace(),
-                },
-            },
+				Description: "Whether the index should be built in the background",
+				Optional:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.RequiresReplace(),
+				},
+			},
 			"partial_filter_expression": schema.StringAttribute{
 				Description: "JSON encoded filter expression that limits indexed documents.",
 				Optional:    true,

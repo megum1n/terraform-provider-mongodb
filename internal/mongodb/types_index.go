@@ -25,7 +25,7 @@ type IndexOptions struct {
 	DefaultLanguage         *string                `bson:"default_language,omitempty"`
 	LanguageOverride        *string                `bson:"language_override,omitempty"`
 	TextIndexVersion        *int32                 `bson:"textIndexVersion,omitempty"`
-	Background              *bool                  `bson:"background,omitempty"` 
+	Background              *bool                  `bson:"background,omitempty"`
 }
 
 type Index struct {
