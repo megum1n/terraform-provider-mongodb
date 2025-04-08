@@ -30,6 +30,7 @@ func setIndexOptions(index *Index) func(*options.IndexOptions) error {
 		opts.DefaultLanguage = index.Options.DefaultLanguage
 		opts.LanguageOverride = index.Options.LanguageOverride
 		opts.TextVersion = index.Options.TextIndexVersion
+		opts.Background = index.Options.Background
 
 		if len(index.Options.PartialFilterExpression) > 0 {
 			opts.PartialFilterExpression = index.Options.PartialFilterExpression

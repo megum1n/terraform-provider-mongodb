@@ -96,6 +96,7 @@ type IndexResourceModel struct {
 	DefaultLanguage         types.String  `tfsdk:"default_language"`
 	LanguageOverride        types.String  `tfsdk:"language_override"`
 	TextIndexVersion        types.Int32   `tfsdk:"text_index_version"`
+	Background              types.Bool    `tfsdk:"background"`
 }
 
 func (ind *IndexResourceModel) updateState(ctx context.Context, index *mongodb.Index) diag.Diagnostics {
@@ -350,6 +351,13 @@ func (r *IndexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					boolplanmodifier.RequiresReplace(),
 				},
 			},
+			"background": schema.BoolAttribute{
+                Description: "Whether the index should be built in the background",
+                Optional:    true,
+                PlanModifiers: []planmodifier.Bool{
+                    boolplanmodifier.RequiresReplace(),
+                },
+            },
 			"partial_filter_expression": schema.StringAttribute{
 				Description: "JSON encoded filter expression that limits indexed documents.",
 				Optional:    true,
@@ -573,6 +581,7 @@ func (r *IndexResource) Create(ctx context.Context, req resource.CreateRequest, 
 			DefaultLanguage:    plan.DefaultLanguage.ValueStringPointer(),
 			LanguageOverride:   plan.LanguageOverride.ValueStringPointer(),
 			TextIndexVersion:   plan.TextIndexVersion.ValueInt32Pointer(),
+			Background:         plan.Background.ValueBoolPointer(),
 		},
 	}
 
