@@ -83,13 +83,6 @@ func (u *UserResourceModel) updateState(ctx context.Context, user *mongodb.User)
 	if len(user.Mechanisms) > 0 {
 		u.Mechanisms, d = types.SetValueFrom(ctx, types.StringType, user.Mechanisms)
 		diags.Append(d...)
-	} else if !u.Mechanisms.IsUnknown() {
-		// Fallback to current value (from plan)
-		u.Mechanisms = u.Mechanisms
-	} else {
-		// Default to SCRAM-SHA-256 explicitly
-		u.Mechanisms, d = types.SetValue(ctx, types.StringType, []string{"SCRAM-SHA-256"})
-		diags.Append(d...)
 	}
 
 	return diags
@@ -152,7 +145,9 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				ElementType: types.StringType,
 				Optional:    true,
 				Computed:    true,
-				Default:     setdefault.StaticValue(types.SetNull(types.StringType)),
+				Default: setdefault.StaticValueMust(types.SetValueMust(types.StringType, []attr.Value{
+					types.StringValue("SCRAM-SHA-256"),
+				})),
 			},
 		},
 	}
