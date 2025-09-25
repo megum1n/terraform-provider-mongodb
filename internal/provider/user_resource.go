@@ -145,9 +145,7 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				ElementType: types.StringType,
 				Optional:    true,
 				Computed:    true,
-				Default: setdefault.StaticValueMust(types.SetValueMust(types.StringType, []attr.Value{
-					types.StringValue("SCRAM-SHA-256"),
-				})),
+				Default:     setdefault.StaticValueMust(types.SetValueMust(types.StringType, []attr.Value{})),
 			},
 		},
 	}
