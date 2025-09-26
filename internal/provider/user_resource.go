@@ -142,11 +142,13 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			},
 			"mechanisms": schema.SetAttribute{
 				MarkdownDescription: "Specify the specific SCRAM mechanism " +
-					"or mechanisms for creating SCRAM user credentials.",
+					"or mechanisms for creating SCRAM user credentials. Defaults to `SCRAM-SHA-256`.",
 				ElementType: types.StringType,
 				Optional:    true,
 				Computed:    true,
-				Default:     setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
+				Default: setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{
+					types.StringValue("SCRAM-SHA-256"),
+				})),
 			},
 		},
 	}
