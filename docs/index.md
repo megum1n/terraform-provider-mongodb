@@ -25,6 +25,7 @@ MongoDB resources management
 
 - `auth_source` (String) AuthSource database
 - `certificate` (String) Certificate PEM string
+- `direct_connection` (Boolean) Direct connection to MongoDB
 - `insecure_skip_verify` (Boolean) Insecure TLS
 - `replica_set` (String) Replica set name
 - `tls` (Boolean) Enable TLS

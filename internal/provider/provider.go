@@ -34,6 +34,7 @@ type MongodbProviderModel struct {
 	TLS                types.Bool   `tfsdk:"tls"`
 	Certificate        types.String `tfsdk:"certificate"`
 	InsecureSkipVerify types.Bool   `tfsdk:"insecure_skip_verify"`
+	DirectConnection   types.Bool   `tfsdk:"direct_connection"`
 }
 
 func New(version string) func() provider.Provider {
@@ -89,6 +90,10 @@ func (p *MongodbProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 				MarkdownDescription: "Insecure TLS",
 				Optional:            true,
 			},
+			"direct_connection": schema.BoolAttribute{
+				MarkdownDescription: "Direct connection to MongoDB",
+				Optional:            true,
+			},
 		},
 	}
 }
@@ -129,6 +134,7 @@ func (p *MongodbProvider) Configure(
 		TLS:                data.TLS.ValueBool(),
 		Certificate:        data.Certificate.ValueString(),
 		InsecureSkipVerify: data.InsecureSkipVerify.ValueBool(),
+		DirectConnection:   data.DirectConnection.ValueBool(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError(

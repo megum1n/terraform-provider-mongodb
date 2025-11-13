@@ -19,6 +19,7 @@ type ClientOptions struct {
 	TLS                bool
 	InsecureSkipVerify bool
 	Certificate        string
+	DirectConnection   bool
 }
 
 type Client struct {
@@ -35,7 +36,8 @@ func New(ctx context.Context, options *ClientOptions) (*Client, error) {
 			Password:   options.Password,
 			AuthSource: options.AuthSource,
 		}).
-		SetReplicaSet(options.ReplicaSet)
+		SetReplicaSet(options.ReplicaSet).
+		SetDirect(options.DirectConnection)
 
 	if options.TLS {
 		tlsConfig := &tls.Config{

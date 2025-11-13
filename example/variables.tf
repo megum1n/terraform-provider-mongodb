@@ -10,6 +10,12 @@ variable "tls" {
   default     = false
 }
 
+variable "direct_connection" {
+  description = "Direct connection to MongoDB (useful for single-node deployments)"
+  type        = bool
+  default     = false
+}
+
 variable "mongo_username" {
   description = "MongoDB admin username"
   type        = string
