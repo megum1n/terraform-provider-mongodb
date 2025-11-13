@@ -15,6 +15,7 @@ type ClientOptions struct {
 	Username           string
 	Password           string
 	AuthSource         string
+	AuthMechanism      string
 	ReplicaSet         string
 	TLS                bool
 	InsecureSkipVerify bool
@@ -32,9 +33,10 @@ func New(ctx context.Context, options *ClientOptions) (*Client, error) {
 	opt := mongooptions.Client().
 		SetHosts(options.Hosts).
 		SetAuth(mongooptions.Credential{
-			Username:   options.Username,
-			Password:   options.Password,
-			AuthSource: options.AuthSource,
+			Username:      options.Username,
+			Password:      options.Password,
+			AuthSource:    options.AuthSource,
+			AuthMechanism: options.AuthMechanism,
 		}).
 		SetReplicaSet(options.ReplicaSet).
 		SetDirect(options.DirectConnection)

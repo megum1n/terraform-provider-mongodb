@@ -30,6 +30,7 @@ type MongodbProviderModel struct {
 	Username           types.String `tfsdk:"username"`
 	Password           types.String `tfsdk:"password"`
 	AuthSource         types.String `tfsdk:"auth_source"`
+	AuthMechanism      types.String `tfsdk:"auth_mechanism"`
 	ReplicaSet         types.String `tfsdk:"replica_set"`
 	TLS                types.Bool   `tfsdk:"tls"`
 	Certificate        types.String `tfsdk:"certificate"`
@@ -62,16 +63,20 @@ func (p *MongodbProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 			},
 			"username": schema.StringAttribute{
 				MarkdownDescription: "Username",
-				Required:            true,
+				Optional:            true,
 				Sensitive:           true,
 			},
 			"password": schema.StringAttribute{
 				MarkdownDescription: "Password",
-				Required:            true,
+				Optional:            true,
 				Sensitive:           true,
 			},
 			"auth_source": schema.StringAttribute{
 				MarkdownDescription: "AuthSource database",
+				Optional:            true,
+			},
+			"auth_mechanism": schema.StringAttribute{
+				MarkdownDescription: "Authentication mechanism (e.g., MONGODB-AWS, SCRAM-SHA-256)",
 				Optional:            true,
 			},
 			"replica_set": schema.StringAttribute{
@@ -130,6 +135,7 @@ func (p *MongodbProvider) Configure(
 		Username:           data.Username.ValueString(),
 		Password:           data.Password.ValueString(),
 		AuthSource:         data.AuthSource.ValueString(),
+		AuthMechanism:      data.AuthMechanism.ValueString(),
 		ReplicaSet:         data.ReplicaSet.ValueString(),
 		TLS:                data.TLS.ValueBool(),
 		Certificate:        data.Certificate.ValueString(),

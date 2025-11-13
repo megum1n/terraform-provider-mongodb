@@ -18,14 +18,15 @@ MongoDB resources management
 ### Required
 
 - `hosts` (List of String) MongoDB hosts
-- `password` (String, Sensitive) Password
-- `username` (String, Sensitive) Username
 
 ### Optional
 
+- `auth_mechanism` (String) Authentication mechanism (e.g., MONGODB-AWS, SCRAM-SHA-256)
 - `auth_source` (String) AuthSource database
 - `certificate` (String) Certificate PEM string
 - `direct_connection` (Boolean) Direct connection to MongoDB
 - `insecure_skip_verify` (Boolean) Insecure TLS
+- `password` (String, Sensitive) Password
 - `replica_set` (String) Replica set name
 - `tls` (Boolean) Enable TLS
+- `username` (String, Sensitive) Username
