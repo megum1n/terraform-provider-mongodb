@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/providervalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -26,6 +28,7 @@ type MongodbProvider struct {
 }
 
 type MongodbProviderModel struct {
+	ConnectionString   types.String `tfsdk:"connection_string"`
 	Hosts              types.List   `tfsdk:"hosts"`
 	Username           types.String `tfsdk:"username"`
 	Password           types.String `tfsdk:"password"`
@@ -53,13 +56,18 @@ func (p *MongodbProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 
 func (p *MongodbProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "MongoDB resources management",
+		MarkdownDescription: "MongoDB resources management.\n" +
+			"You must provide either `connection_string` or `hosts` to connect to.",
 
 		Attributes: map[string]schema.Attribute{
+			"connection_string": schema.StringAttribute{
+				MarkdownDescription: "MongoDB connection string",
+				Optional:            true,
+			},
 			"hosts": schema.ListAttribute{
 				MarkdownDescription: "MongoDB hosts",
 				ElementType:         types.StringType,
-				Required:            true,
+				Optional:            true,
 			},
 			"username": schema.StringAttribute{
 				MarkdownDescription: "Username",
@@ -131,6 +139,7 @@ func (p *MongodbProvider) Configure(
 	}
 
 	p.client, err = mongodb.New(ctx, &mongodb.ClientOptions{
+		ConnectionString:   data.ConnectionString.ValueString(),
 		Hosts:              hosts,
 		Username:           data.Username.ValueString(),
 		Password:           data.Password.ValueString(),
@@ -154,6 +163,16 @@ func (p *MongodbProvider) Configure(
 
 func (p *MongodbProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return nil
+}
+
+func (p *MongodbProvider) ConfigValidators(ctx context.Context) []provider.ConfigValidator {
+	return []provider.ConfigValidator{
+		// Users must provide either connection_string or hosts list
+		providervalidator.AtLeastOneOf(
+			path.MatchRoot("connection_string"),
+			path.MatchRoot("hosts"),
+		),
+	}
 }
 
 func (p *MongodbProvider) Resources(_ context.Context) []func() resource.Resource {
