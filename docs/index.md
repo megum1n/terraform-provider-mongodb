@@ -8,8 +8,8 @@ description: |-
 
 # mongodb Provider
 
-MongoDB resources management.
-You must provide either `connection_string` or `hosts` to connect to.
+MongoDB resources management.<br>
+**You must provide either `connection_string` or `hosts` to connect to.**
 
 
 

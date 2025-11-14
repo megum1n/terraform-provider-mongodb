@@ -56,8 +56,8 @@ func (p *MongodbProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 
 func (p *MongodbProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "MongoDB resources management.\n" +
-			"You must provide either `connection_string` or `hosts` to connect to.",
+		MarkdownDescription: "MongoDB resources management.<br>\n" +
+			"**You must provide either `connection_string` or `hosts` to connect to.**",
 
 		Attributes: map[string]schema.Attribute{
 			"connection_string": schema.StringAttribute{
