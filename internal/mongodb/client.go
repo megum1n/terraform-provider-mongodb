@@ -25,9 +25,9 @@ type ClientOptions struct {
 }
 
 type Client struct {
-	mongo *mongo.Client
-
 	ClientOptions
+
+	mongo *mongo.Client
 }
 
 func New(ctx context.Context, options *ClientOptions) (*Client, error) {

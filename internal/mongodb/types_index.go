@@ -35,16 +35,6 @@ type Index struct {
 	Options    IndexOptions `bson:"inline"` // Inline embedding
 }
 
-func (k IndexKeys) toBson() bson.D {
-	out := bson.D{}
-
-	for field, value := range k {
-		out = append(out, bson.E{Key: field, Value: value})
-	}
-
-	return out
-}
-
 func (k IndexKeys) ToStringMap() map[string]string {
 	out := map[string]string{}
 
@@ -76,6 +66,16 @@ func ConvertMap(k map[string]string, indexKeys bool) map[string]interface{} {
 		} else {
 			out[field] = value
 		}
+	}
+
+	return out
+}
+
+func (k IndexKeys) toBson() bson.D {
+	out := bson.D{}
+
+	for field, value := range k {
+		out = append(out, bson.E{Key: field, Value: value})
 	}
 
 	return out

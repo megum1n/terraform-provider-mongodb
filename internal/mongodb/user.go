@@ -53,7 +53,9 @@ func (c *Client) UpsertUser(ctx context.Context, user *User) (*User, error) {
 	}
 
 	response := c.mongo.Database(user.Database).RunCommand(ctx, command)
-	if err = response.Err(); err != nil {
+
+	err = response.Err()
+	if err != nil {
 		return nil, err
 	}
 
