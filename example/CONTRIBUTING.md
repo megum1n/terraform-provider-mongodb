@@ -11,7 +11,8 @@ Put this file into your home directory to use local binary
 ```hcl
 provider_installation {
   dev_overrides {
-    "megum1n/mongodb" = "~/go/bin"
+    # Specify full path to your go/bin directory
+    "megum1n/mongodb" = "/home/megum1n/go/bin"
   }
 
   # For all other providers, install them directly from their origin provider
