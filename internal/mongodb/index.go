@@ -48,7 +48,7 @@ func setIndexOptions(index *Index) func(*options.IndexOptions) error {
 }
 
 func (c *Client) CreateIndex(ctx context.Context, index *Index) (*Index, error) {
-	tflog.Debug(ctx, "CreateIndex", map[string]interface{}{
+	tflog.Debug(ctx, "CreateIndex", map[string]any{
 		"database":   index.Database,
 		"collection": index.Collection,
 		"name":       index.Name,
@@ -89,18 +89,20 @@ func (c *Client) GetIndex(ctx context.Context, opt *GetIndexOptions) (*Index, er
 	defer func(cursor *mongo.Cursor, ctx context.Context) {
 		err := cursor.Close(ctx)
 		if err != nil {
-			tflog.Error(ctx, "error closing cursor", map[string]interface{}{
+			tflog.Error(ctx, "error closing cursor", map[string]any{
 				"err": err,
 			})
 		}
 	}(cursor, ctx)
 
 	var indexes []Index
-	if err = cursor.All(ctx, &indexes); err != nil {
+
+	err = cursor.All(ctx, &indexes)
+	if err != nil {
 		return nil, err
 	}
 
-	tflog.Debug(ctx, "Index data from MongoDB", map[string]interface{}{
+	tflog.Debug(ctx, "Index data from MongoDB", map[string]any{
 		"indexes": indexes,
 	})
 
@@ -120,7 +122,7 @@ func (c *Client) GetIndex(ctx context.Context, opt *GetIndexOptions) (*Index, er
 }
 
 func (c *Client) DeleteIndex(ctx context.Context, options *GetIndexOptions) error {
-	tflog.Debug(ctx, "DeleteIndex", map[string]interface{}{
+	tflog.Debug(ctx, "DeleteIndex", map[string]any{
 		"database":   options.Database,
 		"collection": options.Collection,
 		"name":       options.Name,

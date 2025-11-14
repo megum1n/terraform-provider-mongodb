@@ -16,7 +16,7 @@ const (
 )
 
 func (c *Client) UpsertRole(ctx context.Context, role *Role) (*Role, error) {
-	tflog.Debug(ctx, "UpsertRole", map[string]interface{}{
+	tflog.Debug(ctx, "UpsertRole", map[string]any{
 		"name":     role.Name,
 		"database": role.Database,
 	})
@@ -45,7 +45,9 @@ func (c *Client) UpsertRole(ctx context.Context, role *Role) (*Role, error) {
 	}
 
 	response := c.mongo.Database(role.Database).RunCommand(ctx, command)
-	if err = response.Err(); err != nil {
+
+	err = response.Err()
+	if err != nil {
 		return nil, err
 	}
 
@@ -82,7 +84,7 @@ type getRoleResult struct {
 }
 
 func (c *Client) GetRole(ctx context.Context, options *GetRoleOptions) (*Role, error) {
-	tflog.Debug(ctx, "GetRole", map[string]interface{}{
+	tflog.Debug(ctx, "GetRole", map[string]any{
 		"name":     options.Name,
 		"database": options.Database,
 	})
@@ -93,13 +95,15 @@ func (c *Client) GetRole(ctx context.Context, options *GetRoleOptions) (*Role, e
 	}
 
 	response := c.mongo.Database(options.Database).RunCommand(ctx, command)
-	if err := response.Err(); err != nil {
+
+	err := response.Err()
+	if err != nil {
 		return nil, err
 	}
 
 	var result getRoleResult
 
-	err := response.Decode(&result)
+	err = response.Decode(&result)
 	if err != nil {
 		return nil, err
 	}
@@ -136,13 +140,15 @@ func (c *Client) DeleteRole(ctx context.Context, options *DeleteRoleOptions) err
 	}
 
 	response := c.mongo.Database(options.Database).RunCommand(ctx, command)
-	if err := response.Err(); err != nil {
+
+	err := response.Err()
+	if err != nil {
 		return err
 	}
 
 	var result Result
 
-	err := response.Decode(&result)
+	err = response.Decode(&result)
 	if err != nil {
 		return err
 	}

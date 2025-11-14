@@ -25,13 +25,16 @@ linters:
     - godox
     - wrapcheck
 
+    # Deprecated
+    - wsl
+
   settings:
     tagliatelle:
       case:
         rules:
-          bson: snake
           json: snake
           yaml: snake
+
 formatters:
   enable:
     - gofmt
