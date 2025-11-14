@@ -1,13 +1,17 @@
 # Contributing
 
-## Test changes locally 
+## Docs
+
+https://developer.hashicorp.com/terraform/plugin/framework
+
+## Test changes locally
 
 Put this file into your home directory to use local binary
 
 ```hcl
 provider_installation {
   dev_overrides {
-      "megum1n/mongodb" = "~/go/bin"
+    "megum1n/mongodb" = "~/go/bin"
   }
 
   # For all other providers, install them directly from their origin provider

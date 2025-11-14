@@ -11,6 +11,7 @@ import (
 )
 
 type ClientOptions struct {
+	ConnectionString   string
 	Hosts              []string
 	Username           string
 	Password           string
@@ -40,6 +41,10 @@ func New(ctx context.Context, options *ClientOptions) (*Client, error) {
 		}).
 		SetReplicaSet(options.ReplicaSet).
 		SetDirect(options.DirectConnection)
+
+	if options.ConnectionString != "" {
+		opt.ApplyURI(options.ConnectionString)
+	}
 
 	if options.TLS {
 		tlsConfig := &tls.Config{
