@@ -10,14 +10,34 @@ variable "tls" {
   default     = false
 }
 
-variable "mongo_username" {
-  description = "MongoDB admin username"
+variable "direct_connection" {
+  description = "Direct connection to MongoDB (useful for single-node deployments)"
+  type        = bool
+  default     = false
+}
+
+variable "auth_mechanism" {
+  description = "Authentication mechanism (e.g., MONGODB-AWS, SCRAM-SHA-256)"
   type        = string
+  default     = null
+}
+
+variable "auth_source" {
+  description = "AuthSource database"
+  type        = string
+  default     = null
+}
+
+variable "mongo_username" {
+  description = "MongoDB admin username (optional when using AWS IAM auth)"
+  type        = string
+  default     = null
 }
 
 variable "mongo_password" {
-  description = "MongoDB admin password"
+  description = "MongoDB admin password (optional when using AWS IAM auth)"
   type        = string
+  default     = null
 }
 
 variable "database_name" {
