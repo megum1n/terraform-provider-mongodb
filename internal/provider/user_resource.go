@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -123,6 +123,10 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"roles": schema.SetNestedAttribute{
 				MarkdownDescription: "The roles granted to the user",
 				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"role": schema.StringAttribute{
@@ -145,7 +149,9 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				ElementType: types.StringType,
 				Optional:    true,
 				Computed:    true,
-				Default:     setdefault.StaticValue(types.SetNull(types.StringType)),
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -185,15 +191,17 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	// Parse roles
 	var roles []mongodb.ShortRole
 
-	resp.Diagnostics.Append(plan.Roles.ElementsAs(ctx, &roles, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	if !plan.Roles.IsUnknown() && !plan.Roles.IsNull() {
+		resp.Diagnostics.Append(plan.Roles.ElementsAs(ctx, &roles, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
 	// Parse mechanisms
 	var mechanisms []string
 
-	if !plan.Mechanisms.IsUnknown() {
+	if !plan.Mechanisms.IsUnknown() && !plan.Mechanisms.IsNull() {
 		resp.Diagnostics.Append(plan.GetMechanisms(ctx, &mechanisms)...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -280,15 +288,17 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	// Parse roles
 	var roles []mongodb.ShortRole
 
-	resp.Diagnostics.Append(plan.Roles.ElementsAs(ctx, &roles, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	if !plan.Roles.IsUnknown() && !plan.Roles.IsNull() {
+		resp.Diagnostics.Append(plan.Roles.ElementsAs(ctx, &roles, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
 	// Parse mechanisms
 	var mechanisms []string
 
-	if !plan.Mechanisms.IsUnknown() {
+	if !plan.Mechanisms.IsUnknown() && !plan.Mechanisms.IsNull() {
 		resp.Diagnostics.Append(plan.GetMechanisms(ctx, &mechanisms)...)
 		if resp.Diagnostics.HasError() {
 			return
